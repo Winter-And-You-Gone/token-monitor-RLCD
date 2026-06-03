@@ -65,7 +65,7 @@ void Lvgl_PortInit(int width, int height, DispFlushCb flush_cb) {
     assert(buffer_1);
     assert(buffer_2);
 
-    lv_display_set_buffers(disp, buffer_1, buffer_2, buffer_size, LV_DISPLAY_RENDER_MODE_FULL);
+    lv_display_set_buffers(disp, buffer_1, buffer_2, buffer_size, LV_DISPLAY_RENDER_MODE_PARTIAL);
 
     ESP_LOGI(TAG, "Install LVGL tick timer");
   	esp_timer_create_args_t lvgl_tick_timer_args = {};

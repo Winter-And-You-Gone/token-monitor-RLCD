@@ -21,15 +21,22 @@ STALE_AFTER = int(os.environ.get("RLCD_LIMITS_STALE", "600"))  # 10 min
 
 def fetch_limits() -> ClaudeLimits | None:
     try:
-        d = json.load(open(LIMITS_FILE))
+        with open(LIMITS_FILE, encoding="utf-8") as f:
+            d = json.load(f)
     except Exception:
         return None
     u5 = d.get("util_5h")
     u7 = d.get("util_7d")
+    file_status = str(d.get("status", "unavailable"))
     if u5 is None or u5 < 0:
-        return ClaudeLimits(status=str(d.get("status", "unavailable")))
+        return ClaudeLimits(status=file_status)
     age = time.time() - float(d.get("ts", 0))
-    status = "ok" if age < STALE_AFTER else "stale"
+    if age >= STALE_AFTER:
+        status = "stale"
+    elif file_status == "ok":
+        status = "ok"
+    else:
+        status = file_status
 
     def ts(key: str) -> datetime | None:
         v = d.get(key)

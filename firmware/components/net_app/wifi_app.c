@@ -14,6 +14,7 @@
 static const char         *TAG                 = "wifi";
 static EventGroupHandle_t  s_evt;
 static const EventBits_t   BIT_CONNECTED       = BIT0;
+static const TickType_t    CONNECT_TIMEOUT     = pdMS_TO_TICKS(30000);
 
 static void event_handler(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
@@ -50,6 +51,10 @@ esp_err_t wifi_app_connect_blocking(const char *ssid, const char *password)
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wc));
     ESP_ERROR_CHECK(esp_wifi_start());
 
-    xEventGroupWaitBits(s_evt, BIT_CONNECTED, pdFALSE, pdTRUE, portMAX_DELAY);
+    EventBits_t bits = xEventGroupWaitBits(s_evt, BIT_CONNECTED, pdFALSE, pdTRUE, CONNECT_TIMEOUT);
+    if ((bits & BIT_CONNECTED) == 0) {
+        ESP_LOGW(TAG, "connect timeout; will keep retrying in background");
+        return ESP_ERR_TIMEOUT;
+    }
     return ESP_OK;
 }

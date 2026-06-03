@@ -18,7 +18,7 @@
    • 从 Anthropic API 响应头获取             • 每 60 秒 GET /api/usage
      真实的 5h/7d 窗口用量                   • 用 cJSON 解析 JSON
    • 获取 DeepSeek 账户余额                  • LVGL 双栏 UI：
-   • 获取室外天气（open-meteo，免 key）          左栏 → Claude 用量 + 进度条
+   • 获取室外天气（国内城市优先 CMA，免 key）    左栏 → Claude 用量 + 进度条
    • 缓存结果，在 :7777 提供 JSON 服务          右栏 → DeepSeek 余额
                                              • 读取室内温湿度（SHTC3）
                                              • NTP 对时（CST-8）显示时间
@@ -90,7 +90,7 @@ git clone https://github.com/CEJXXX/token-monitor-RLCD.git
 cd token-monitor-RLCD/bridge
 
 uv sync                            # 安装 Python 依赖（首次）
-uv run python bridge.py            # 监听 :7777
+uv run python bridge.py            # 默认监听 127.0.0.1:7777
 ```
 
 新开一个终端验证：
@@ -100,6 +100,13 @@ curl http://localhost:7777/api/usage | jq          # 实时数据
 curl 'http://localhost:7777/api/usage?mock=1' | jq # 模拟数据（不依赖 ccusage）
 ```
 
+浏览器打开 `http://localhost:7777/sim` 可以直接使用本机 RLCD 模拟器。它会走同一个 `/api/usage`
+接口，支持 mock/live、token、自动刷新和 stale/offline 状态。
+
+> 本地补充素材 / 参考项目：如果模拟器或宠物动画提示缺少 Clawd 资源、vendor demo、
+> 图标源文件等，当前开发机上的这些缺失内容统一放在 `X:\ESP`，从那里拷贝或同步到
+> 本仓库对应目录即可。
+
 ### 第三步 — 安装为 systemd 服务
 
 ```bash
@@ -107,7 +114,9 @@ curl 'http://localhost:7777/api/usage?mock=1' | jq # 模拟数据（不依赖 cc
 scripts/install-bridge-linux.sh
 ```
 
-脚本会自动创建 `~/.config/systemd/user/rlcd-bridge.service` 并启动服务。
+脚本会自动创建 `~/.config/systemd/user/rlcd-bridge.service` 并启动服务。该服务会读取
+`bridge/.env`；需要让 ESP32 从局域网访问时，在 `.env` 中设置 `RLCD_HOST=0.0.0.0`
+并同时设置 `RLCD_AUTH_TOKEN`。
 
 ```bash
 systemctl --user status rlcd-bridge
@@ -125,15 +134,20 @@ loginctl enable-linger $USER
 创建 `bridge/.env`（已在 .gitignore 中）并按需填写：
 
 ```ini
-RLCD_HOST=0.0.0.0          # 监听地址（默认 0.0.0.0）
+RLCD_HOST=127.0.0.1        # 监听地址；局域网访问设 0.0.0.0，并必须设置 token
 RLCD_PORT=7777              # 监听端口（默认 7777）
 RLCD_AUTH_TOKEN=<随机串>    # 非本地访问时必须设置
-RLCD_WEATHER_LAT=22.5431   # 纬度（默认深圳）
-RLCD_WEATHER_LON=114.0579  # 经度
-RLCD_WEATHER_CITY=SHENZHEN # 设备上显示的城市名（≤8 个字符）
-# 天气源（二选一，优先 Caiyun；不设则自动用 open-meteo，无需 key）
-CAIYUN_API_KEY=<彩云天气token>   # 推荐，国内准确度更高；申请：https://dashboard.caiyunapp.com（默认每天刷新 1 次，总额度 10000 次）
-# QWEATHER_KEY=<和风天气key>     # 备选（需自行适配 sources/weather.py）
+RLCD_ALLOW_QUERY_TOKEN=0    # 默认只接受 X-RLCD-Token header；旧客户端需要 ?token= 时才设为 1
+RLCD_TZ=Asia/Hong_Kong      # 用量“今日/本月”的切日时区（默认 Asia/Hong_Kong）
+RLCD_WEATHER_CMA=1         # 城市名优先使用中国气象局 CMA 数据；设为 0 可关闭
+RLCD_WEATHER_LAT=30.2741   # 坐标兜底纬度（默认杭州）
+RLCD_WEATHER_LON=120.1551  # 坐标兜底经度
+RLCD_WEATHER_CITY=杭州     # 天气城市；中文城市会返回 city_ascii 供固件显示
+RLCD_TOKEN_LIMIT=100M       # 固定 token 容量上限；支持 100M/1.5B/50000000
+RLCD_BLOCK_LIMIT_TOKENS=100M  # 可选：单独设置 5h 进度条上限
+RLCD_WEEKLY_LIMIT_TOKENS=100M # 可选：单独设置 7d/weekly 进度条上限
+# 坐标天气兜底：不设 key 时自动用 Open-Meteo；设置后坐标查询会用彩云天气
+CAIYUN_API_KEY=<彩云天气token>
 DEEPSEEK_API_KEY=sk-...    # 启用 DeepSeek 余额显示（可选）
 RLCD_WEEKLY_LIMIT_USD=100  # 你的周预算，设置后启用周进度条
 RLCD_BLOCK_LIMIT_USD=20    # 你的 5h 窗口预算，设置后启用 5h 进度条
@@ -165,7 +179,10 @@ sudo systemctl status rlcd-claude-limits.timer
 
 每次运行消耗一条 1-token Haiku 消息（费用极低）。若 OAuth token 失效，`limits.status` 变为 `stale`，设备继续显示上次有效数据。
 
-> Anthropic 不通过 API 公开 Pro/Max 套餐的 token 或金额上限。若要启用进度条，需手动设置 `RLCD_WEEKLY_LIMIT_USD` / `RLCD_BLOCK_LIMIT_USD`。
+> Anthropic 不通过 API 公开 Pro/Max 套餐的 token 或金额上限。默认用 `RLCD_TOKEN_LIMIT=100M`
+> 作为固定容量上限计算进度条；也可用 `RLCD_BLOCK_LIMIT_TOKENS` / `RLCD_WEEKLY_LIMIT_TOKENS`
+> 分别调整 5h 与 7d/weekly 上限。若想按预算金额计算，仍可设置 `RLCD_WEEKLY_LIMIT_USD` /
+> `RLCD_BLOCK_LIMIT_USD`。
 
 ### 第五步 — 编译并烧录固件
 
@@ -322,7 +339,7 @@ token-monitor-RLCD/
 │   │   ├── claude_local.py    # ccusage 集成
 │   │   ├── claude_limits.py   # 读取 /run/rlcd/claude-limits.json
 │   │   ├── deepseek.py        # DeepSeek 余额 API
-│   │   └── weather.py         # open-meteo（免 API key）
+│   │   └── weather.py         # CMA 优先，Open-Meteo/Caiyun 坐标兜底
 │   └── pyproject.toml
 ├── firmware/                  # ESP-IDF v5 + LVGL v9 项目
 │   ├── main/

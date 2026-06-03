@@ -10,6 +10,7 @@ REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 BRIDGE_DIR="$REPO_ROOT/bridge"
 UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 UNIT_FILE="$UNIT_DIR/rlcd-bridge.service"
+ENV_FILE="$BRIDGE_DIR/.env"
 
 if [[ ! -d "$BRIDGE_DIR" ]]; then
     echo "error: $BRIDGE_DIR not found" >&2
@@ -29,6 +30,13 @@ mkdir -p "$UNIT_DIR"
 
 UV_BIN="$(command -v uv)"
 
+unit_path() {
+    printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/ /\\x20/g'
+}
+
+BRIDGE_DIR_UNIT="$(unit_path "$BRIDGE_DIR")"
+ENV_FILE_UNIT="$(unit_path "$ENV_FILE")"
+
 cat > "$UNIT_FILE" <<EOF
 [Unit]
 Description=RLCD bridge (Claude usage -> HTTP JSON for ESP32-S3-RLCD-4.2)
@@ -37,9 +45,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=$BRIDGE_DIR
-Environment=RLCD_HOST=127.0.0.1
-Environment=RLCD_PORT=7777
+WorkingDirectory=$BRIDGE_DIR_UNIT
+EnvironmentFile=-$ENV_FILE_UNIT
 ExecStart=$UV_BIN run python bridge.py
 Restart=on-failure
 RestartSec=5

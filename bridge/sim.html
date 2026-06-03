@@ -1,0 +1,1084 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RLCD 用量模拟器</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --paper: #ffffff;
+      --ink: #171717;
+      --muted: #5f625c;
+      --line: #9ea29a;
+      --track: #d7dad2;
+      --panel: #f8f8f4;
+      --accent: #0f766e;
+      --warn: #b45309;
+      --bad: #b91c1c;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: #d9ddd3;
+      color: var(--ink);
+      font: 14px/1.35 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    .app {
+      width: min(1120px, 100vw);
+      padding: 24px;
+      display: grid;
+      grid-template-columns: minmax(400px, 800px) minmax(260px, 320px);
+      gap: 24px;
+      align-items: start;
+    }
+    .device-shell {
+      justify-self: center;
+      width: min(800px, 100%);
+      padding: clamp(14px, 2.6vw, 28px);
+      border: 2px solid #2f312f;
+      border-radius: 28px;
+      background: #202220;
+      box-shadow: 0 22px 50px rgba(32, 34, 32, .28);
+    }
+    .screen {
+      width: 100%;
+      height: auto;
+      aspect-ratio: 4 / 3;
+      background: var(--paper);
+      color: var(--ink);
+      position: relative;
+      overflow: hidden;
+      font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    }
+    .screen-inner {
+      position: absolute;
+      inset: 0;
+      transform-origin: top left;
+      transform: scale(var(--screen-scale, 1));
+      width: 400px;
+      height: 300px;
+    }
+    .screen * {
+      position: absolute;
+      white-space: nowrap;
+      letter-spacing: 0;
+    }
+    .time {
+      left: 10px;
+      top: 4px;
+      font: 700 28px/1 system-ui, sans-serif;
+    }
+    .indoor {
+      left: 12px;
+      top: 44px;
+      font: 600 14px/1.1 system-ui, sans-serif;
+    }
+    .wx-icon {
+      left: 280px;
+      top: 8px;
+      width: 26px;
+      height: 26px;
+    }
+    .wx-temp {
+      left: 308px;
+      top: 10px;
+      width: 80px;
+      text-align: right;
+      font: 700 20px/1.1 system-ui, sans-serif;
+    }
+    .wx-city {
+      left: 208px;
+      top: 44px;
+      width: 180px;
+      text-align: right;
+      font: 700 14px/1.1 system-ui, sans-serif;
+      overflow: hidden;
+      text-overflow: clip;
+    }
+    .rule-h {
+      left: 10px;
+      top: 66px;
+      width: 380px;
+      height: 2px;
+      background: var(--ink);
+    }
+    .split {
+      left: 200px;
+      top: 8px;
+      width: 2px;
+      height: 188px;
+      background: var(--ink);
+    }
+    .status-rule {
+      left: 10px;
+      top: 268px;
+      width: 380px;
+      height: 2px;
+      background: var(--ink);
+    }
+    .pet-crab {
+      left: 164px;
+      top: 5px;
+      width: 56px;
+      height: 56px;
+      object-fit: contain;
+      image-rendering: pixelated;
+      filter: grayscale(1) contrast(1.25);
+    }
+    .carousel-viewport {
+      left: 0;
+      top: 66px;
+      width: 400px;
+      height: 222px;
+      overflow: hidden;
+    }
+    .carousel-track {
+      left: 0;
+      top: 0;
+      width: 1000px;
+      height: 222px;
+      transition: transform 600ms linear;
+    }
+    .panel {
+      top: 0;
+      width: 200px;
+      height: 222px;
+    }
+    .logo {
+      left: 10px;
+      top: 6px;
+      width: 34px;
+      height: 34px;
+      background: var(--ink);
+    }
+    .claude-logo {
+      -webkit-mask: url("/sim/assets/claudecode.svg") center / contain no-repeat;
+      mask: url("/sim/assets/claudecode.svg") center / contain no-repeat;
+    }
+    .deepseek-logo {
+      -webkit-mask: url("/sim/assets/deepseek.svg") center / contain no-repeat;
+      mask: url("/sim/assets/deepseek.svg") center / contain no-repeat;
+    }
+    .codex-logo {
+      -webkit-mask: url("/sim/assets/codex.svg") center / contain no-repeat;
+      mask: url("/sim/assets/codex.svg") center / contain no-repeat;
+    }
+    .title {
+      left: 50px;
+      top: 10px;
+      font: 800 20px/1 system-ui, sans-serif;
+    }
+    .bar-label {
+      left: 12px;
+      font: 700 14px/1.1 system-ui, sans-serif;
+    }
+    .bar-label.five { top: 46px; }
+    .bar-label.week { top: 70px; }
+    .bar {
+      left: 40px;
+      width: 96px;
+      height: 13px;
+      border: 2px solid var(--ink);
+      border-radius: 7px;
+      overflow: hidden;
+      background: var(--paper);
+    }
+    .bar > i {
+      position: static;
+      display: block;
+      height: 100%;
+      width: 0%;
+      background: var(--ink);
+    }
+    .bar.five { top: 46px; }
+    .bar.week { top: 70px; }
+    .pct {
+      left: 140px;
+      width: 52px;
+      text-align: right;
+      font: 800 14px/1.1 ui-monospace, Consolas, monospace;
+    }
+    .pct.five { top: 44px; }
+    .pct.week { top: 68px; }
+    .reset {
+      left: 12px;
+      top: 94px;
+      width: 178px;
+      font: 700 14px/1.1 system-ui, sans-serif;
+      overflow: hidden;
+      text-overflow: clip;
+    }
+    .model-name, .model-token {
+      font: 800 14px/1.1 ui-monospace, Consolas, monospace;
+      overflow: hidden;
+      white-space: nowrap;
+    }
+    .model-name { left: 12px; width: 112px; }
+    .model-token { left: 132px; width: 60px; text-align: right; }
+    .m0 { top: 46px; }
+    .m1 { top: 70px; }
+    .m2 { top: 94px; }
+    .subrule {
+      left: 12px;
+      top: 118px;
+      width: 178px;
+      height: 1px;
+      background: var(--ink);
+    }
+    .row-label, .money-row-label {
+      font: 700 14px/1.1 system-ui, sans-serif;
+    }
+    .row-token, .row-cost, .money-row-val {
+      font: 800 14px/1.1 ui-monospace, Consolas, monospace;
+    }
+    .row-label { left: 12px; width: 52px; overflow: hidden; }
+    .row-token { left: 64px; width: 62px; text-align: right; }
+    .row-cost { left: 128px; width: 64px; text-align: right; }
+    .money-row-label { left: 12px; width: 82px; overflow: hidden; }
+    .money-row-val { left: 94px; width: 94px; text-align: right; }
+    .r0 { top: 126px; }
+    .r1 { top: 154px; }
+    .r2 { top: 182px; }
+    .balance-label {
+      left: 12px;
+      top: 38px;
+      width: 176px;
+      text-align: center;
+      font: 700 14px/1.1 system-ui, sans-serif;
+    }
+    .balance {
+      left: 12px;
+      top: 62px;
+      width: 176px;
+      text-align: center;
+      font: 900 28px/1.1 system-ui, sans-serif;
+    }
+    .hero-label {
+      left: 12px;
+      top: 38px;
+      width: 176px;
+      text-align: center;
+      font: 700 14px/1.1 system-ui, sans-serif;
+    }
+    .hero-value {
+      left: 12px;
+      top: 58px;
+      width: 176px;
+      text-align: center;
+      font: 900 20px/1.1 system-ui, sans-serif;
+    }
+    .hero-sub {
+      left: 12px;
+      top: 86px;
+      width: 176px;
+      text-align: center;
+      font: 800 13px/1.1 ui-monospace, Consolas, monospace;
+    }
+    .codex-badge {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--paper);
+      font: 700 13px/1 ui-monospace, Consolas, monospace;
+      user-select: none;
+    }
+    .status-strip {
+      left: 12px;
+      top: 274px;
+      width: 318px;
+      height: 16px;
+      font: 700 14px/1 system-ui, sans-serif;
+      overflow: hidden;
+      opacity: .82;
+    }
+    .build-tag {
+      left: 338px;
+      top: 274px;
+      width: 50px;
+      height: 16px;
+      text-align: right;
+      font: 700 14px/1 system-ui, sans-serif;
+      overflow: hidden;
+    }
+    .controls {
+      width: 100%;
+      padding: 16px;
+      background: rgba(248, 248, 244, .92);
+      border: 1px solid #bfc4b8;
+      border-radius: 8px;
+      box-shadow: 0 12px 30px rgba(32, 34, 32, .12);
+    }
+    .controls h1 {
+      margin: 0 0 14px;
+      font: 800 18px/1.2 system-ui, sans-serif;
+    }
+    .control-row {
+      display: grid;
+      gap: 6px;
+      margin: 12px 0;
+    }
+    label {
+      font-weight: 700;
+      color: #33362f;
+    }
+    input, select, button {
+      width: 100%;
+      min-height: 34px;
+      border: 1px solid #a9afa2;
+      border-radius: 6px;
+      background: white;
+      color: var(--ink);
+      font: inherit;
+      padding: 6px 8px;
+    }
+    button {
+      cursor: pointer;
+      background: var(--ink);
+      color: white;
+      font-weight: 800;
+      border-color: var(--ink);
+    }
+    .inline {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .check {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 700;
+      margin: 8px 0 0;
+    }
+    .check input {
+      width: 16px;
+      min-height: 16px;
+      padding: 0;
+    }
+    .api-state {
+      margin-top: 14px;
+      padding-top: 12px;
+      border-top: 1px solid #c9cec2;
+      color: var(--muted);
+      font: 12px/1.35 ui-monospace, Consolas, monospace;
+      word-break: break-word;
+    }
+    .api-state strong {
+      color: var(--ink);
+    }
+    .ok { color: var(--accent); }
+    .warn { color: var(--warn); }
+    .bad { color: var(--bad); }
+    @media (max-width: 860px) {
+      .app {
+        grid-template-columns: 1fr;
+        padding: 14px;
+      }
+      .controls {
+        order: -1;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <section class="device-shell" aria-label="RLCD 设备模拟器" data-i18n-aria="deviceAria">
+      <div class="screen">
+        <div class="screen-inner">
+          <div class="time" id="time">--:--</div>
+          <div class="indoor" id="indoor">室内 --.-°C  --%RH</div>
+          <img class="pet-crab" id="petCrab" src="/sim/clawd/clawd-idle-follow.svg" alt="">
+          <svg class="wx-icon" id="wxIcon" viewBox="0 0 32 32" aria-hidden="true"></svg>
+          <div class="wx-temp" id="wxTemp">--°C</div>
+          <div class="wx-city" id="wxCity">等待</div>
+          <div class="rule-h"></div>
+          <div class="carousel-viewport">
+            <div class="carousel-track" id="carouselTrack"></div>
+          </div>
+          <div class="status-rule"></div>
+          <div class="status-strip" id="statusStrip">初始化</div>
+          <div class="build-tag">UI v10</div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="controls" aria-label="模拟器控制项" data-i18n-aria="controlsAria">
+      <h1 data-i18n="simTitle">RLCD 模拟器</h1>
+      <div class="control-row">
+        <label for="language" data-i18n="language">语言</label>
+        <select id="language">
+          <option value="zh">中文</option>
+          <option value="en">English</option>
+        </select>
+      </div>
+      <div class="control-row">
+        <label for="baseUrl" data-i18n="bridgeUrl">桥接地址</label>
+        <input id="baseUrl" value="/api/usage" spellcheck="false">
+      </div>
+      <div class="inline">
+        <div class="control-row">
+          <label for="mode" data-i18n="mode">模式</label>
+          <select id="mode">
+            <option value="live" data-i18n="live" selected>实时</option>
+            <option value="mock" data-i18n="mock">模拟</option>
+          </select>
+        </div>
+        <div class="control-row">
+          <label for="interval" data-i18n="refresh">刷新</label>
+          <select id="interval">
+            <option value="5" data-i18n="sec5">5 秒</option>
+            <option value="15" data-i18n="sec15">15 秒</option>
+            <option value="60" data-i18n="sec60" selected>60 秒</option>
+          </select>
+        </div>
+      </div>
+      <div class="control-row">
+        <label for="tokenLimit" data-i18n="tokenLimit">Token 上限</label>
+        <input id="tokenLimit" value="100M" spellcheck="false">
+      </div>
+      <div class="control-row">
+        <label for="token" data-i18n="accessToken">访问 Token</label>
+        <input id="token" type="password" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="control-row">
+        <label for="weatherCity" data-i18n="weatherCity">天气城市</label>
+        <input id="weatherCity" spellcheck="false" data-i18n-placeholder="weatherCityPlaceholder" placeholder="例如 Hong Kong">
+      </div>
+      <div class="inline">
+        <div class="control-row">
+          <label for="weatherLat" data-i18n="weatherLat">纬度</label>
+          <input id="weatherLat" type="number" step="any" data-i18n-placeholder="weatherLatPlaceholder" placeholder="22.3193">
+        </div>
+        <div class="control-row">
+          <label for="weatherLon" data-i18n="weatherLon">经度</label>
+          <input id="weatherLon" type="number" step="any" data-i18n-placeholder="weatherLonPlaceholder" placeholder="114.1694">
+        </div>
+      </div>
+      <div class="control-row">
+        <button id="locate" type="button" data-i18n="locate">本机定位</button>
+      </div>
+      <label class="check"><input id="auto" type="checkbox" checked> <span data-i18n="autoRefresh">自动刷新</span></label>
+      <div class="control-row">
+        <button id="refresh" type="button" data-i18n="refreshNow">立即刷新</button>
+      </div>
+      <div class="api-state" id="apiState">
+        <strong>状态:</strong> 空闲
+      </div>
+    </aside>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const PREF_VERSION = 3;
+    const I18N = {
+      zh: {
+        docTitle: "RLCD 用量模拟器",
+        deviceAria: "RLCD 设备模拟器",
+        controlsAria: "模拟器控制项",
+        simTitle: "RLCD 模拟器",
+        language: "语言",
+        bridgeUrl: "桥接地址",
+        mode: "模式",
+        mock: "模拟",
+        live: "实时",
+        refresh: "刷新",
+        sec5: "5 秒",
+        sec15: "15 秒",
+        sec60: "60 秒",
+        tokenLimit: "Token 上限",
+        accessToken: "访问 Token",
+        weatherCity: "天气城市",
+        weatherCityPlaceholder: "例如 Hong Kong",
+        weatherLat: "纬度",
+        weatherLatPlaceholder: "例如 22.3193",
+        weatherLon: "经度",
+        weatherLonPlaceholder: "例如 114.1694",
+        locate: "本机定位",
+        autoRefresh: "自动刷新",
+        refreshNow: "立即刷新",
+        window5h: "5时",
+        window7d: "7天",
+        today: "今日",
+        month: "本月",
+        total: "合计",
+        balance: "可用",
+        granted: "送值",
+        topped: "充值",
+        idle: "空闲",
+        state: "状态",
+        updated: "更新",
+        source: "来源",
+        fetching: "读取中",
+        online: "在线",
+        stale: "过期",
+        offline: "离线",
+        error: "错误",
+        unknown: "未知",
+        weatherPending: "天气更新中",
+        tokenNotSent: "跨源请求未发送 Token",
+        locating: "定位中",
+        locationDenied: "定位失败",
+        currentLocation: "当前位置",
+        waiting: "等待桥接服务",
+        resetUnknown: "reset --",
+        resetIn: (h, m) => `重置 ${h}时${m}分`,
+        indoorUnknown: "室内 --.-C  --%",
+        tokenSuffix: "token",
+        cityFallback: "SHENZHEN",
+        conditions: {
+          Clear: "晴", Sunny: "晴", Partly: "多云", Cloudy: "多云", Overcast: "多云",
+          Rain: "雨", Heavy: "雨", Storm: "雨", Fog: "雾",
+          Snow: "雪", Drizzle: "雨", Windy: "有风", Haze: "雾"
+        },
+        cities: { SHENZHEN: "深圳" }
+      },
+      en: {
+        docTitle: "RLCD Usage Simulator",
+        deviceAria: "RLCD device simulator",
+        controlsAria: "simulator controls",
+        simTitle: "RLCD Simulator",
+        language: "Language",
+        bridgeUrl: "Bridge URL",
+        mode: "Mode",
+        mock: "mock",
+        live: "live",
+        refresh: "Refresh",
+        sec5: "5 sec",
+        sec15: "15 sec",
+        sec60: "60 sec",
+        tokenLimit: "Token limit",
+        accessToken: "X-RLCD-Token",
+        weatherCity: "Weather city",
+        weatherCityPlaceholder: "e.g. Hong Kong",
+        weatherLat: "Latitude",
+        weatherLatPlaceholder: "e.g. 22.3193",
+        weatherLon: "Longitude",
+        weatherLonPlaceholder: "e.g. 114.1694",
+        locate: "Use device location",
+        autoRefresh: "auto refresh",
+        refreshNow: "Refresh now",
+        window5h: "5h",
+        window7d: "7d",
+        today: "today",
+        month: "month",
+        total: "total",
+        balance: "balance",
+        granted: "granted",
+        topped: "topped",
+        idle: "idle",
+        state: "state",
+        updated: "updated",
+        source: "source",
+        fetching: "fetching",
+        online: "online",
+        stale: "stale",
+        offline: "offline",
+        error: "error",
+        unknown: "unknown",
+        weatherPending: "weather updating",
+        tokenNotSent: "token not sent cross-origin",
+        locating: "locating",
+        locationDenied: "location failed",
+        currentLocation: "current location",
+        waiting: "waiting for bridge",
+        resetUnknown: "reset --",
+        resetIn: (h, m) => `reset in ${h}h${m}m`,
+        indoorUnknown: "IN --.-°C  --%RH",
+        tokenSuffix: "tok",
+        cityFallback: "SHENZHEN",
+        conditions: {},
+        cities: {}
+      }
+    };
+    const els = {
+      time: $("time"), indoor: $("indoor"), wxIcon: $("wxIcon"), wxTemp: $("wxTemp"),
+      wxCity: $("wxCity"), petCrab: $("petCrab"), carouselTrack: $("carouselTrack"), statusStrip: $("statusStrip"),
+      apiState: $("apiState"), baseUrl: $("baseUrl"), mode: $("mode"), interval: $("interval"),
+      tokenLimit: $("tokenLimit"), token: $("token"), auto: $("auto"), refresh: $("refresh"),
+      language: $("language"), weatherCity: $("weatherCity"), weatherLat: $("weatherLat"),
+      weatherLon: $("weatherLon"), locate: $("locate")
+    };
+    let timer = 0;
+    let petTimer = 0;
+    let weatherRetryTimer = 0;
+    let lastWeather = null;
+    let currentReport = null;
+    let currentLang = "zh";
+    let carouselTimer = 0;
+    let carouselMoving = false;
+    let carouselIndex = 0;
+    const screen = document.querySelector(".screen");
+    const screenInner = document.querySelector(".screen-inner");
+    const CAROUSEL_HOLD_MS = 33 * 115;
+    const CAROUSEL_ANIM_MS = 33 * 15;
+    const CAROUSEL_PANELS = ["claude", "deepseek", "codex", "claude", "deepseek"];
+    const PET_ASSETS = new Set([
+      "clawd-idle-follow.svg",
+      "clawd-idle-yawn.svg",
+      "clawd-idle-doze.svg",
+      "clawd-collapse-sleep.svg",
+      "clawd-working-thinking.svg",
+      "clawd-working-typing.svg",
+      "clawd-headphones-groove.svg",
+      "clawd-working-juggling.svg",
+      "clawd-working-sweeping.svg",
+      "clawd-error.svg",
+      "clawd-happy.svg",
+      "clawd-notification.svg",
+      "clawd-working-carrying.svg",
+      "clawd-sleeping.svg",
+      "clawd-wake.svg",
+      "clawd-working-building.svg",
+    ]);
+
+    function esc(v) {
+      return String(v ?? "").replace(/[&<>"']/g, (m) => (
+        m === "&" ? "&amp;" :
+        m === "<" ? "&lt;" :
+        m === ">" ? "&gt;" :
+        m === '"' ? "&quot;" : "&#39;"
+      ));
+    }
+
+    function tr(key) {
+      return (I18N[currentLang] && I18N[currentLang][key]) || I18N.en[key] || key;
+    }
+    function applyI18n() {
+      currentLang = els.language.value || "zh";
+      document.documentElement.lang = currentLang === "zh" ? "zh-CN" : "en";
+      document.title = tr("docTitle");
+      document.querySelectorAll("[data-i18n]").forEach((el) => {
+        el.textContent = tr(el.dataset.i18n);
+      });
+      document.querySelectorAll("[data-i18n-aria]").forEach((el) => {
+        el.setAttribute("aria-label", tr(el.dataset.i18nAria));
+      });
+      document.querySelectorAll("[data-i18n-placeholder]").forEach((el) => {
+        el.setAttribute("placeholder", tr(el.dataset.i18nPlaceholder));
+      });
+      els.indoor.textContent = tr("indoorUnknown");
+      if (!currentReport) {
+        els.wxCity.textContent = "等待";
+        renderCarousel(null, true);
+        els.statusStrip.textContent = "初始化";
+        els.apiState.innerHTML = `<strong>${tr("state")}:</strong> ${tr("idle")}`;
+      } else {
+        setRows(currentReport);
+      }
+    }
+    function cityName(city, cityAscii) {
+      const raw = city || cityAscii || "深圳";
+      const key = raw.toUpperCase();
+      return I18N[currentLang].cities[key] || raw;
+    }
+    function conditionName(condition) {
+      return I18N[currentLang].conditions[condition] || condition || "";
+    }
+    function weatherLine(weather) {
+      const src = weather || lastWeather;
+      if (!src) return tr("cityFallback");
+      const condition = conditionName(src.condition);
+      return cityName(src.city, src.city_ascii) + (condition ? "  " + condition : "");
+    }
+    function resizeScreen() {
+      if (!screen || !screenInner) return;
+      screenInner.style.setProperty("--screen-scale", String(screen.clientWidth / 400));
+    }
+    function pct(value) {
+      return Number.isFinite(value) ? Math.max(0, Math.min(100, Math.round(value))) : null;
+    }
+    function pctText(value) {
+      const p = pct(value);
+      return p === null ? "--%" : p + "%";
+    }
+    function pctWidth(value) {
+      const p = pct(value);
+      return p === null ? "0%" : p + "%";
+    }
+    function findOther(report, agent) {
+      const items = (report && Array.isArray(report.other)) ? report.other : [];
+      return items.find((item) => String(item && item.agent || "").toLowerCase() === agent) || null;
+    }
+    function bucketValue(bucket, field) {
+      return bucket && Number.isFinite(bucket[field]) ? bucket[field] : null;
+    }
+    function rowHtml(label, token, cost, rowIndex, extraClass = "") {
+      const klass = extraClass ? ` ${extraClass}` : "";
+      return `
+        <div class="row-label r${rowIndex}${klass}">${esc(label)}</div>
+        <div class="row-token r${rowIndex}${klass}">${esc(token)}</div>
+        <div class="row-cost r${rowIndex}${klass}">${esc(cost)}</div>
+      `;
+    }
+    function moneyRowHtml(label, value, rowIndex) {
+      return `
+        <div class="money-row-label r${rowIndex}">${esc(label)}</div>
+        <div class="money-row-val r${rowIndex}">${esc(value)}</div>
+      `;
+    }
+    function shortModelName(name) {
+      let text = String(name || "-");
+      text = text.replace(/^deepseek-/, "ds-").replace(/^claude-/, "");
+      return text.length > 16 ? text.slice(0, 16) : text;
+    }
+    function modelRowsHtml(models) {
+      const items = Array.isArray(models) ? models.slice(0, 3) : [];
+      while (items.length < 3) items.push(null);
+      return items.map((model, idx) => {
+        const name = model ? shortModelName(model.model) : "-";
+        const tokens = model && Number.isFinite(model.tokens) ? fmtTok(model.tokens) : "-";
+        return `
+          <div class="model-name m${idx}">${esc(name)}</div>
+          <div class="model-token m${idx}">${esc(tokens)}</div>
+        `;
+      }).join("");
+    }
+    function renderClaudePanel(report) {
+      const c = report && report.claude ? report.claude : {};
+      const buckets = [c.today, c.month, c.lifetime];
+      const rows = buckets.map((bucket, idx) => {
+        const token = bucketValue(bucket, "tokens_used");
+        const cost = bucketValue(bucket, "cost_usd");
+        return rowHtml(
+          [tr("today"), tr("month"), tr("total")][idx],
+          token === null ? "-" : fmtTok(token),
+          cost === null ? "-" : fmtCost(cost),
+          idx,
+        );
+      }).join("");
+      return `
+        <div class="logo claude-logo"></div>
+        <div class="title">CLAUDE</div>
+        ${modelRowsHtml(c.by_model)}
+        <div class="subrule"></div>
+        ${rows}
+      `;
+    }
+    function renderDeepseekPanel(report) {
+      const ds = report && report.deepseek ? report.deepseek : null;
+      const valid = ds && Number.isFinite(ds.balance);
+      const granted = valid ? Number(ds.granted || 0).toFixed(2) : "-";
+      const topped = valid ? Number(ds.topped || 0).toFixed(2) : "-";
+      const today = valid ? fmtTok(ds.today_tokens) : "-";
+      return `
+        <div class="logo deepseek-logo"></div>
+        <div class="title">DEEPSEEK</div>
+        <div class="balance-label">${esc(tr("balance"))}</div>
+        <div class="balance">${esc(valid ? fmtMoney(ds.balance, ds.currency || "CNY") : "--")}</div>
+        <div class="subrule"></div>
+        ${moneyRowHtml(tr("granted"), granted, 0)}
+        ${moneyRowHtml(tr("topped"), topped, 1)}
+        ${moneyRowHtml(tr("today") + tr("tokenSuffix"), today, 2)}
+      `;
+    }
+    function renderCodexPanel(report) {
+      const other = findOther(report, "codex");
+      const today = other && other.today ? other.today : null;
+      const month = other && other.month ? other.month : null;
+      const lifetime = other && other.lifetime ? other.lifetime : null;
+      const todayTok = today && Number.isFinite(today.tokens_used) ? fmtTok(today.tokens_used) : "-";
+      const todayCost = today && Number.isFinite(today.cost_usd) ? fmtCost(today.cost_usd) : "-";
+      const monthTok = month && Number.isFinite(month.tokens_used) ? fmtTok(month.tokens_used) : "-";
+      const monthCost = month && Number.isFinite(month.cost_usd) ? fmtCost(month.cost_usd) : "-";
+      const lifeTok = lifetime && Number.isFinite(lifetime.tokens_used) ? fmtTok(lifetime.tokens_used) : "-";
+      const lifeCost = lifetime && Number.isFinite(lifetime.cost_usd) ? fmtCost(lifetime.cost_usd) : "-";
+      return `
+        <div class="logo codex-logo"></div>
+        <div class="title">CODEX</div>
+        ${modelRowsHtml(other && other.by_model)}
+        <div class="subrule"></div>
+        ${rowHtml(tr("today"), todayTok, todayCost, 0)}
+        ${rowHtml(tr("month"), monthTok, monthCost, 1)}
+        ${rowHtml(tr("total"), lifeTok, lifeCost, 2)}
+      `;
+    }
+    function renderPanel(agent, report, left) {
+      const html = agent === "claude" ? renderClaudePanel(report)
+        : agent === "deepseek" ? renderDeepseekPanel(report)
+        : renderCodexPanel(report);
+      return `<div class="panel" style="left:${left}px">${html}</div>`;
+    }
+    function renderCarousel(report, reset = false) {
+      if (!els.carouselTrack) return;
+      const needsReset = reset || !els.carouselTrack.querySelector(".panel");
+      const wasMoving = carouselMoving;
+      if (needsReset) {
+        clearTimeout(carouselTimer);
+        carouselTimer = 0;
+        carouselMoving = false;
+        carouselIndex = 0;
+        els.carouselTrack.style.transition = "none";
+        els.carouselTrack.style.transform = "translateX(0)";
+      } else {
+        carouselMoving = false;
+        els.carouselTrack.style.transition = "none";
+        els.carouselTrack.style.transform = `translateX(${-carouselIndex * 200}px)`;
+      }
+      els.carouselTrack.innerHTML = `
+        ${CAROUSEL_PANELS.map((agent, idx) => renderPanel(agent, report, idx * 200)).join("")}
+      `;
+      setCarouselSplits(false);
+      void els.carouselTrack.offsetWidth;
+      els.carouselTrack.style.transition = `transform ${CAROUSEL_ANIM_MS}ms linear`;
+      if (needsReset) scheduleCarousel();
+      else if (wasMoving) scheduleCarousel();
+    }
+    function setCarouselSplits(moving) {
+      if (!els.carouselTrack) return;
+      els.carouselTrack.querySelectorAll(".split").forEach((el) => el.remove());
+      const positions = [(carouselIndex + 1) * 200 - 2];
+      if (moving) positions.push((carouselIndex + 2) * 200 - 2);
+      els.carouselTrack.insertAdjacentHTML("beforeend", positions
+        .filter((left) => left >= 0 && left < CAROUSEL_PANELS.length * 200)
+        .map((left) => `<div class="split" style="left:${left}px"></div>`)
+        .join(""));
+    }
+    function scheduleCarousel() {
+      clearTimeout(carouselTimer);
+      if (!els.carouselTrack || !els.carouselTrack.children.length) return;
+      carouselTimer = setTimeout(advanceCarousel, CAROUSEL_HOLD_MS);
+    }
+    function advanceCarousel() {
+      if (!els.carouselTrack || carouselMoving || els.carouselTrack.children.length < 2) {
+        scheduleCarousel();
+        return;
+      }
+      setCarouselSplits(true);
+      carouselMoving = true;
+      carouselIndex += 1;
+      els.carouselTrack.style.transform = `translateX(${-carouselIndex * 200}px)`;
+    }
+    if (els.carouselTrack) {
+      els.carouselTrack.addEventListener("transitionend", (ev) => {
+        if (ev.propertyName !== "transform" || !carouselMoving) return;
+        carouselMoving = false;
+        if (carouselIndex >= 3) {
+          carouselIndex = 0;
+          els.carouselTrack.style.transition = "none";
+          els.carouselTrack.style.transform = "translateX(0)";
+          void els.carouselTrack.offsetWidth;
+          els.carouselTrack.style.transition = `transform ${CAROUSEL_ANIM_MS}ms linear`;
+        }
+        setCarouselSplits(false);
+        scheduleCarousel();
+      });
+    }
+    function loadPrefs() {
+      const raw = localStorage.getItem("rlcd-sim");
+      if (!raw) return;
+      try {
+        const p = JSON.parse(raw);
+        if (p.version !== PREF_VERSION) {
+          if (p.mode === "mock") p.mode = "live";
+          p.interval = "60";
+        }
+        for (const key of ["baseUrl", "mode", "interval", "tokenLimit", "auto", "language", "weatherCity", "weatherLat", "weatherLon"]) {
+          if (key in p && els[key]) {
+            if (els[key].type === "checkbox") els[key].checked = !!p[key];
+            else els[key].value = p[key];
+          }
+        }
+      } catch (_) {}
+    }
+    function savePrefs() {
+      localStorage.setItem("rlcd-sim", JSON.stringify({
+        version: PREF_VERSION,
+        baseUrl: els.baseUrl.value, mode: els.mode.value, interval: els.interval.value,
+        tokenLimit: els.tokenLimit.value, auto: els.auto.checked,
+        language: els.language.value, weatherCity: els.weatherCity.value,
+        weatherLat: els.weatherLat.value, weatherLon: els.weatherLon.value
+      }));
+    }
+    function parseTokenLimit(value) {
+      const raw = String(value || "").trim().replaceAll("_", "");
+      if (!raw || /^(0|none|off|false)$/i.test(raw)) return null;
+      const match = raw.match(/^([0-9]+(?:\.[0-9]+)?)([kKmMbB]?)$/);
+      if (!match) return null;
+      const mult = match[2].toLowerCase() === "k" ? 1e3 : match[2].toLowerCase() === "m" ? 1e6 : match[2].toLowerCase() === "b" ? 1e9 : 1;
+      const n = Number(match[1]) * mult;
+      return Number.isFinite(n) && n > 0 ? n : null;
+    }
+    function fmtTok(v) {
+      const n = Number(v || 0);
+      if (n >= 1e9) return (n / 1e9).toFixed(1) + "B";
+      if (n >= 1e7) return (n / 1e6).toFixed(0) + "M";
+      if (n >= 1e6) return (n / 1e6).toFixed(1) + "M";
+      if (n >= 1e3) return (n / 1e3).toFixed(0) + "K";
+      return String(Math.round(n));
+    }
+    function fmtCost(v) {
+      const n = Number(v || 0);
+      if (n < 100) return "$" + n.toFixed(2);
+      if (n < 1000) return "$" + n.toFixed(0);
+      return "$" + (n / 1000).toFixed(1) + "k";
+    }
+    function fmtMoney(v, currency = "CNY") {
+      const symbol = currency === "CNY" ? "¥" : currency + " ";
+      return symbol + Number(v || 0).toFixed(2);
+    }
+    function resetText(mins) {
+      if (!Number.isFinite(mins) || mins < 0) return tr("resetUnknown");
+      return tr("resetIn")(Math.floor(mins / 60), String(Math.floor(mins % 60)).padStart(2, "0"));
+    }
+    function drawIcon(kind) {
+      const stroke = "currentColor";
+      const cloud = '<path d="M10 23h13a6 6 0 0 0 0-12 8 8 0 0 0-15-1 6.5 6.5 0 0 0 2 13Z" fill="none" stroke="' + stroke + '" stroke-width="2"/>';
+      const sun = '<circle cx="11" cy="11" r="5" fill="none" stroke="' + stroke + '" stroke-width="2"/><path d="M11 1v4M11 17v4M1 11h4M17 11h4M4 4l3 3M15 15l3 3M18 4l-3 3M7 15l-3 3" stroke="' + stroke + '" stroke-width="2"/>';
+      const rain = cloud + '<path d="M12 26l-2 4M18 26l-2 4M24 26l-2 4" stroke="' + stroke + '" stroke-width="2"/>';
+      const snow = cloud + '<path d="M12 27h0M18 27h0M24 27h0" stroke="' + stroke + '" stroke-width="4" stroke-linecap="round"/>';
+      const fog = cloud + '<path d="M7 27h18M9 30h14" stroke="' + stroke + '" stroke-width="2"/>';
+      const partly = sun + '<g transform="translate(5 4)">' + cloud + '</g>';
+      els.wxIcon.innerHTML = kind === "clear" ? sun : kind === "rain" ? rain : kind === "snow" ? snow : kind === "fog" ? fog : kind === "partly" ? partly : cloud;
+    }
+    function renderPet(pet) {
+      if (!els.petCrab) return;
+      const asset = pet && PET_ASSETS.has(pet.asset) ? pet.asset : "clawd-idle-follow.svg";
+      const nextSrc = `/sim/clawd/${asset}`;
+      if (!els.petCrab.getAttribute("src").endsWith(nextSrc)) {
+        els.petCrab.src = nextSrc;
+      }
+      els.petCrab.title = pet ? `${pet.state || "idle"} ${pet.agent || ""}`.trim() : "idle";
+    }
+    async function refreshPet() {
+      try {
+        const url = new URL("/api/pet/state", location.href);
+        const res = await fetch(url, { cache: "no-store" });
+        if (!res.ok) return;
+        renderPet(await res.json());
+      } catch {}
+    }
+    function setRows(report) {
+      const firstReport = !currentReport || !els.carouselTrack || !els.carouselTrack.querySelector(".panel");
+      currentReport = report;
+      renderCarousel(report, firstReport);
+      renderPet(report && report.pet);
+      const w = report.weather;
+      if (w && Number.isFinite(w.temp_c)) {
+        els.wxTemp.textContent = Math.round(w.temp_c) + "°C";
+        lastWeather = { city: w.city || w.city_ascii || "杭州", city_ascii: w.city_ascii || "", condition: w.condition || "" };
+        drawIcon(w.icon || "cloud");
+      }
+      els.wxCity.textContent = report.stale ? "等待" : weatherLine(w);
+    }
+    function updateClock() {
+      const now = new Date();
+      els.time.textContent = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+    }
+    function clearWeatherRetry() {
+      clearTimeout(weatherRetryTimer);
+      weatherRetryTimer = 0;
+    }
+    function queueWeatherRetry() {
+      if (weatherRetryTimer) return;
+      weatherRetryTimer = setTimeout(() => {
+        weatherRetryTimer = 0;
+        refresh();
+      }, 3000);
+    }
+    function urlForFetch() {
+      const raw = els.baseUrl.value.trim() || "/api/usage";
+      const url = new URL(raw, location.href);
+      if (els.mode.value === "mock") url.searchParams.set("mock", "1");
+      else url.searchParams.delete("mock");
+      const city = els.weatherCity.value.trim();
+      const latRaw = els.weatherLat.value.trim();
+      const lonRaw = els.weatherLon.value.trim();
+      const lat = Number(latRaw);
+      const lon = Number(lonRaw);
+      if (city) url.searchParams.set("weather_city", city);
+      if (latRaw && lonRaw && Number.isFinite(lat) && Number.isFinite(lon)) {
+        url.searchParams.set("weather_lat", String(lat));
+        url.searchParams.set("weather_lon", String(lon));
+      }
+      return url;
+    }
+    function updatedHm(value) {
+      const text = String(value || "");
+      if (/^\d{2}:\d{2}/.test(text)) return text.slice(0, 5);
+      if (text.length >= 16 && text[10] === "T") return text.slice(11, 16);
+      return "--:--";
+    }
+    function markBridgeOffline(err) {
+      const hadData = !!currentReport;
+      if (!hadData) renderCarousel(null, false);
+      els.wxCity.textContent = hadData ? "STALE" : "等待服务";
+      els.statusStrip.textContent = "离线 来源=bridge 更新=--:--";
+      els.apiState.innerHTML = `<strong>${tr("state")}:</strong> <span class="bad">${tr("offline")}</span><br><strong>${tr("error")}:</strong> ${err.message}`;
+    }
+    async function refresh() {
+      savePrefs();
+      updateClock();
+      const url = urlForFetch();
+      const headers = {};
+      const crossOriginToken = !!els.token.value && url.origin !== location.origin;
+      if (els.token.value && !crossOriginToken) headers["X-RLCD-Token"] = els.token.value;
+      els.apiState.innerHTML = `<strong>${tr("state")}:</strong> ${tr("fetching")} ${url.pathname}${url.search}`;
+      try {
+        const res = await fetch(url, { headers, cache: "no-store" });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error((data && (data.error || data.detail)) || ("HTTP " + res.status));
+        setRows(data);
+        const updated = updatedHm(data.updated_at);
+        const cls = data.stale ? "warn" : "ok";
+        els.statusStrip.textContent = `${data.stale ? "离线" : "在线"} 来源=${data.source || "ccusage"} 更新=${updated}`;
+        const notes = [];
+        if (data.weather_pending) notes.push(tr("weatherPending"));
+        if (crossOriginToken) notes.push(tr("tokenNotSent"));
+        els.apiState.innerHTML = `<strong>${tr("state")}:</strong> <span class="${cls}">${data.stale ? tr("stale") : tr("online")}</span><br><strong>${tr("updated")}:</strong> ${updated}${notes.length ? "<br>" + notes.join("<br>") : ""}`;
+        if (data.weather_pending) queueWeatherRetry();
+        else clearWeatherRetry();
+      } catch (err) {
+        clearWeatherRetry();
+        markBridgeOffline(err);
+      }
+    }
+    function schedule() {
+      clearInterval(timer);
+      if (els.auto.checked) timer = setInterval(refresh, Number(els.interval.value) * 1000);
+    }
+    function locate() {
+      if (!navigator.geolocation) {
+        els.apiState.innerHTML = `<strong>${tr("state")}:</strong> <span class="bad">${tr("locationDenied")}</span>`;
+        return;
+      }
+      els.apiState.innerHTML = `<strong>${tr("state")}:</strong> ${tr("locating")}`;
+      navigator.geolocation.getCurrentPosition((pos) => {
+        els.weatherLat.value = pos.coords.latitude.toFixed(4);
+        els.weatherLon.value = pos.coords.longitude.toFixed(4);
+        if (!els.weatherCity.value.trim()) els.weatherCity.value = tr("currentLocation");
+        savePrefs();
+        refresh();
+      }, (err) => {
+        els.apiState.innerHTML = `<strong>${tr("state")}:</strong> <span class="bad">${tr("locationDenied")}</span><br><strong>${tr("error")}:</strong> ${err.message}`;
+      }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 600000 });
+    }
+    loadPrefs();
+    applyI18n();
+    resizeScreen();
+    addEventListener("resize", resizeScreen);
+    drawIcon("cloud");
+    refreshPet();
+    petTimer = setInterval(refreshPet, 2000);
+    updateClock();
+    setInterval(updateClock, 1000);
+    for (const el of [els.baseUrl, els.mode, els.interval, els.tokenLimit, els.token, els.auto, els.weatherCity, els.weatherLat, els.weatherLon]) {
+      el.addEventListener("change", () => { savePrefs(); schedule(); refresh(); });
+      el.addEventListener("input", savePrefs);
+    }
+    els.weatherCity.addEventListener("input", () => {
+      els.weatherLat.value = "";
+      els.weatherLon.value = "";
+      savePrefs();
+    });
+    els.language.addEventListener("change", () => { savePrefs(); applyI18n(); refresh(); });
+    els.locate.addEventListener("click", locate);
+    els.refresh.addEventListener("click", refresh);
+    schedule();
+    refresh();
+  </script>
+</body>
+</html>

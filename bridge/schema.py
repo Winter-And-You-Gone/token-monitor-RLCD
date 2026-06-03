@@ -58,6 +58,7 @@ class OtherAgentUsage(BaseModel):
     today: Bucket
     month: Bucket
     lifetime: Bucket
+    by_model: list[ModelBreakdown] = Field(default_factory=list)
 
 
 class Weather(BaseModel):
@@ -66,6 +67,7 @@ class Weather(BaseModel):
     condition: str = ""          # short English label, e.g. "Cloudy"
     icon: str = ""               # one of: clear/partly/cloud/rain/snow/fog
     city: str = ""
+    city_ascii: str = ""         # ASCII-safe display name for firmware fonts
 
 
 class DeepSeek(BaseModel):
@@ -77,6 +79,16 @@ class DeepSeek(BaseModel):
     available: bool = False
 
 
+class PetState(BaseModel):
+    state: str = "idle"
+    agent: str = ""
+    event: str = ""
+    sessions: int = 0
+    subagents: int = 0
+    asset: str = "clawd-idle-follow.svg"
+    updated_at: Optional[datetime] = None
+
+
 class UsageReport(BaseModel):
     updated_at: datetime
     source: str = "ccusage"
@@ -84,3 +96,4 @@ class UsageReport(BaseModel):
     other: list[OtherAgentUsage] = Field(default_factory=list)
     weather: Optional[Weather] = None
     deepseek: Optional[DeepSeek] = None
+    pet: PetState = Field(default_factory=PetState)

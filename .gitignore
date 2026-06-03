@@ -24,6 +24,12 @@ Thumbs.db
 bridge/.env
 firmware/main/secrets.h
 
+# Local runtime / QA scratch
+.playwright-cli/
+bridge/*.log
+*.rlcd-bak-*
+browser-sim-visible.png
+
 # Vendor reference (kept locally; not committed)
 ESP32-S3-RLCD-4.2-Demo/
 ESP32-S3-RLCD-4.2-Demo.zip

@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 # Generate LVGL v9 A8 image descriptors for the RLCD UI icons.
+from pathlib import Path
 import cairosvg, io, math
 from PIL import Image, ImageDraw
 
-OUT_C = "/home/coding/RLCD/firmware/components/ui_app/icons.c"
-OUT_H = "/home/coding/RLCD/firmware/components/ui_app/icons.h"
+ROOT = Path(__file__).resolve().parents[1]
+OUT_C = ROOT / "firmware" / "components" / "ui_app" / "icons.c"
+OUT_H = ROOT / "firmware" / "components" / "ui_app" / "icons.h"
 
 def svg_alpha(path, size):
     png = cairosvg.svg2png(url=path, output_width=size, output_height=size)
@@ -40,8 +42,9 @@ def weather_alpha(kind, size):
     return im.resize((size,size),Image.LANCZOS)
 
 ICONS={}
-ICONS["claudecode"]=svg_alpha("docs/assets/claudecode.svg",34)
-ICONS["deepseek"]=svg_alpha("docs/assets/deepseek.svg",34)
+ICONS["claudecode"]=svg_alpha(str(ROOT / "docs" / "assets" / "claudecode.svg"),34)
+ICONS["deepseek"]=svg_alpha(str(ROOT / "docs" / "assets" / "deepseek.svg"),34)
+ICONS["codex"]=svg_alpha(str(ROOT / "docs" / "assets" / "codex.svg"),34)
 for k in ("clear","partly","cloud","rain","snow","fog"):
     ICONS["wx_"+k]=weather_alpha(k,26)
 

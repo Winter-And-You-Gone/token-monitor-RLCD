@@ -4,7 +4,7 @@
 extern "C" {
 #endif
 
-// wifi connect (blocking)
+// wifi connect (waits briefly, then lets background reconnect continue)
 void UserApp_AppInit(const char *ssid, const char *password);
 
 // build LVGL screen (must hold Lvgl_lock when called)
