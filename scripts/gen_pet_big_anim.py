@@ -9,7 +9,7 @@ import gen_pet_anim as base
 ROOT = Path(__file__).resolve().parents[1]
 OUT_C = ROOT / "firmware" / "components" / "ui_app" / "pet_big_anim.c"
 OUT_H = ROOT / "firmware" / "components" / "ui_app" / "pet_big_anim.h"
-TARGET_SIZE = 176
+TARGET_SIZE = 184
 
 STATE_TO_ASSET = {
     **base.STATE_TO_ASSET,
@@ -28,7 +28,9 @@ def needed_gifs() -> dict[str, Path]:
     result: dict[str, Path] = {}
     for asset in sorted(assets):
         gif_name = ASSET_TO_GIF[asset]
-        gif_path = base.GIF_DIR / gif_name
+        # Prefer re-rendered gif from newgif/ (see base.NEWGIF_DIR).
+        newgif_path = base.NEWGIF_DIR / gif_name
+        gif_path = newgif_path if newgif_path.exists() else base.GIF_DIR / gif_name
         if not gif_path.exists():
             raise SystemExit(f"missing source GIF: {gif_path}")
         result[gif_name] = gif_path
@@ -44,7 +46,7 @@ def main() -> None:
         gif_specs[gif_name] = {
             "frames": frames,
             "durations": durations,
-            "bbox": base.union_bbox(frames),
+            "bbox": base.union_bbox(frames, include_full_ink=gif_name in base.FULL_INK_BBOX_GIFS),
         }
 
     OUT_H.write_text(
@@ -90,7 +92,7 @@ def main() -> None:
         bbox = spec["bbox"]
         c_lines.append(f"// {gif_name}")
         for index, frame in enumerate(frames):
-            body_data, eye_data = base.rasterize_frame_masks(frame, bbox)
+            body_data, eye_data = base.rasterize_frame_masks(frame, bbox, gif_name)
             c_lines.extend(base.emit_frame(sequence_name, index, body_data))
             c_lines.extend(base.emit_frame(f"{sequence_name}_eyes", index, eye_data))
         c_lines.append(f"static const lv_image_dsc_t *const {sequence_name}_frames[] = {{")

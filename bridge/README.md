@@ -7,7 +7,7 @@ LLM-agent) usage data as JSON over HTTP, for the RLCD device to render.
 
 - Python 3.10+
 - [`uv`](https://docs.astral.sh/uv/) (recommended) or any venv tool
-- Node + `npx` available (we shell out to `ccusage` via `npx -y ccusage@latest`)
+- Node/npm, with `ccusage` installed once via `npm install -g ccusage`
 - A populated `~/.claude/projects/` (Claude Code has been used on this machine)
 
 ## Run
@@ -191,13 +191,22 @@ state-only.
 | `RLCD_INCLUDE_OTHERS` | `1` | set `0` to skip codex/gemini/copilot probes |
 | `RLCD_AUTH_TOKEN` | unset | if set, requests must carry `X-RLCD-Token: <value>`. Required when bridge is reachable from anything beyond loopback. `/healthz` is always open. |
 | `RLCD_ALLOW_QUERY_TOKEN` | `0` | set `1` only for legacy clients that still send `?token=<value>`; query tokens can leak into logs. |
+| `RLCD_PET_MOUSE_MONITOR` | `1` on Windows, `0` elsewhere | monitors the bridge host mouse cursor and treats movement as Clawd-style activity. This resets idle timing or wakes a sleeping pet; the ESP32 itself does not read mouse input. |
+| `RLCD_PET_MOUSE_POLL_SEC` | `0.5` | mouse cursor poll interval in seconds. |
+| `RLCD_PET_MOUSE_MIN_DELTA` | `1` | minimum cursor movement in pixels before it counts as activity. |
+| `RLCD_PET_MOUSE_IDLE_SEC` | `20` | seconds of no pet events before showing one idle animation. Clawd-on-Desk uses mouse movement for this timer; RLCD has no cursor input. |
+| `RLCD_PET_IDLE_LOOK_SEC` | `14` | duration of the idle animation before returning to follow/idle. |
+| `RLCD_PET_MOUSE_SLEEP_SEC` | `300` | seconds of no pet events before yawning/dozing/sleeping. Original Clawd's `mouseSleepTimeout` is 60s, but RLCD defaults longer because there is no mouse movement to reset the timer. |
+| `RLCD_PET_IDLE_LOOK_ASSET` | `clawd-idle-reading.svg` | idle animation asset used by the bridge. |
+| `RLCD_PET_SLEEP_SEQUENCE` | `1` | set `0` to disable the automatic idle-to-sleep sequence. |
 | `RLCD_TZ` | `Asia/Hong_Kong` | timezone used for daily/monthly period selection from `ccusage` output. |
 | `RLCD_TOKEN_LIMIT` | `100M` | fixed token capacity used for progress bars when real Claude limits are unavailable. Supports `100M`, `1.5B`, or raw numbers. |
 | `RLCD_BLOCK_LIMIT_TOKENS` | `RLCD_TOKEN_LIMIT` | optional 5h progress-bar token limit override. |
 | `RLCD_WEEKLY_LIMIT_TOKENS` | `RLCD_TOKEN_LIMIT` | optional weekly progress-bar token limit override. |
 | `RLCD_WEEKLY_LIMIT_USD` | unset | if set (e.g. `100`), `weekly.percent_used` is computed |
 | `RLCD_BLOCK_LIMIT_USD` | unset | same for the 5h window |
-| `CCUSAGE_CMD` | `npx -y ccusage@latest` | override if you `npm i -g ccusage` and want `ccusage` directly |
+| `CCUSAGE_CMD` | unset | optional local command/path override. Runtime `npx` and `@latest` commands are rejected; install once with `npm install -g ccusage` instead. |
+| `CCUSAGE_OFFLINE` | `1` | appends `--offline` to ccusage queries so pricing uses embedded data and the bridge does not touch the network/proxy during refresh. |
 | `DEEPSEEK_API_KEY` | unset | enables the `deepseek` block (balance from `/user/balance`). Keep it in a 600-perm `EnvironmentFile`, not the unit. |
 | `RLCD_WEATHER_CMA` | `1` | use China Meteorological Administration (`weather.cma.cn`) station data first when a city name is available; set `0` to skip it |
 | `RLCD_WEATHER_LAT` / `_LON` / `_CITY` | Hangzhou | fallback location for the `weather` block. City names use CMA first, then Open-Meteo; explicit lat/lon uses the coordinate fallback |
@@ -241,7 +250,7 @@ LAN; without those values it stays loopback-only.
 
 1. `curl :7777/healthz` returns `{"ok": true}`.
 2. `curl :7777/api/usage?mock=1` returns the canned shape — useful for offline UI work.
-3. `curl :7777/api/usage` shows numbers that match `npx ccusage blocks --active` /
-   `npx ccusage claude daily` for today.
+3. `curl :7777/api/usage` shows numbers that match `ccusage blocks --active` /
+   `ccusage claude daily` for today.
 4. After running a Claude Code session for ~1 min, `active_block.tokens_used`
    in the next response (≤ `RLCD_REFRESH_SEC` seconds later) goes up.

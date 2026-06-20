@@ -10,6 +10,50 @@
 
 const http = require("node:http");
 const https = require("node:https");
+const fs = require("node:fs");
+const path = require("node:path");
+
+// Bridge auth is mandatory when the bridge binds 0.0.0.0 (see bridge/.env).
+// Claude Code spawns this hook as a child process that does NOT inherit
+// bridge/.env, so without a system-level RLCD_AUTH_TOKEN every state POST is
+// rejected with 401 and the device pet never leaves idle. Fall back to reading
+// bridge/.env (sibling of this file) for RLCD_AUTH_TOKEN / RLCD_BRIDGE_URL so
+// the hook works without extra environment setup.
+function loadBridgeEnv() {
+  if (process.env.RLCD_AUTH_TOKEN && process.env.RLCD_BRIDGE_URL) return;
+  let envPath;
+  try {
+    envPath = path.join(__dirname, ".env");
+  } catch {
+    return;
+  }
+  let text;
+  try {
+    text = fs.readFileSync(envPath, "utf8");
+  } catch {
+    return;
+  }
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    const eq = line.indexOf("=");
+    if (eq < 0) continue;
+    const key = line.slice(0, eq).trim();
+    let val = line.slice(eq + 1).trim();
+    if (
+      (val.startsWith('"') && val.endsWith('"')) ||
+      (val.startsWith("'") && val.endsWith("'"))
+    ) {
+      val = val.slice(1, -1);
+    }
+    if (key === "RLCD_AUTH_TOKEN" && !process.env.RLCD_AUTH_TOKEN) {
+      process.env.RLCD_AUTH_TOKEN = val;
+    } else if (key === "RLCD_BRIDGE_URL" && !process.env.RLCD_BRIDGE_URL) {
+      process.env.RLCD_BRIDGE_URL = val;
+    }
+  }
+}
+loadBridgeEnv();
 
 const EVENT_TO_STATE = {
   SessionStart: "idle",

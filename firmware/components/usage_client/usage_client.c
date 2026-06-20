@@ -218,10 +218,12 @@ esp_err_t usage_client_fetch(const char *url, const char *token, usage_report_t 
         out->weather.temp_c = cJSON_IsNumber(t) ? t->valuedouble : 0.0;
         if (cJSON_IsString(cd)) strncpy(out->weather.condition, cd->valuestring, sizeof(out->weather.condition) - 1);
         if (cJSON_IsString(ic)) strncpy(out->weather.icon,      ic->valuestring, sizeof(out->weather.icon) - 1);
-        if (cJSON_IsString(cy) && cy->valuestring[0]) {
+        if (cJSON_IsString(cy) && cy->valuestring[0] && is_ascii_label(cy->valuestring)) {
             strncpy(out->weather.city, cy->valuestring, sizeof(out->weather.city) - 1);
         } else if (cJSON_IsString(cy_ascii) && is_ascii_label(cy_ascii->valuestring)) {
             strncpy(out->weather.city, cy_ascii->valuestring, sizeof(out->weather.city) - 1);
+        } else if (cJSON_IsString(cy) && cy->valuestring[0]) {
+            strncpy(out->weather.city, cy->valuestring, sizeof(out->weather.city) - 1);
         }
         out->weather.valid = cJSON_IsNumber(t);
     }

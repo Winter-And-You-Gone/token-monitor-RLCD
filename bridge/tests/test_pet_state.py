@@ -213,7 +213,7 @@ class PetRuntimeTests(unittest.TestCase):
     def test_idle_sleep_sequence_advances_through_all_rest_states(self) -> None:
         bridge._pet_display_state("idle", schedule_return=False)
 
-        idle_look = self.wait_for_pet_asset("clawd-idle-yawn.svg")
+        idle_look = self.wait_for_pet_asset("clawd-idle-reading.svg")
         self.assertEqual(idle_look.state, "idle")
         self.wait_for_pet_state("yawning")
         self.wait_for_pet_state("dozing")
@@ -221,6 +221,39 @@ class PetRuntimeTests(unittest.TestCase):
         state = self.wait_for_pet_state("sleeping")
 
         self.assertEqual(state.asset, "clawd-sleeping.svg")
+
+    def test_mouse_activity_returns_idle_animation_to_follow(self) -> None:
+        bridge._pet_display_state("idle", schedule_return=False)
+        self.wait_for_pet_asset("clawd-idle-reading.svg")
+
+        state = bridge._pet_handle_mouse_activity()
+
+        self.assertIsNotNone(state)
+        self.assertEqual(state.state, "idle")
+        self.assertEqual(state.event, "mouse-move")
+        self.assertEqual(state.asset, "clawd-idle-follow.svg")
+
+    def test_mouse_activity_wakes_sleeping_pet(self) -> None:
+        bridge._pet_display_state("sleeping", schedule_return=False)
+
+        state = bridge._pet_handle_mouse_activity()
+
+        self.assertIsNotNone(state)
+        self.assertEqual(state.state, "waking")
+        self.assertEqual(state.asset, "clawd-wake.svg")
+        self.wait_for_pet_state("idle")
+
+    def test_mouse_activity_does_not_interrupt_work(self) -> None:
+        bridge._apply_pet_event({
+            "event": "PostToolUse",
+            "agent": "codex",
+            "session_id": "working",
+        })
+
+        state = bridge._pet_handle_mouse_activity()
+
+        self.assertIsNone(state)
+        self.assertEqual(bridge._get_pet_state().state, "working")
 
     def test_sleeping_pet_wakes_before_resuming_work(self) -> None:
         bridge._pet_display_state("sleeping", schedule_return=False)

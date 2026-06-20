@@ -1,0 +1,384 @@
+{
+  "input_dir": ".tmp\\rlcd_gif_overlay",
+  "mapped_only": true,
+  "sizes": [
+    56,
+    184
+  ],
+  "outputs": {
+    "56": {
+      "contact_sheet": "bridge\\assets\\clawd_rlcd\\size-56\\contact_sheet.png",
+      "items": [
+        {
+          "source": ".tmp\\rlcd_gif_overlay\\clawd-building.gif",
+          "name": "clawd-building.gif",
+          "size": 56,
+          "frame_count": 44,
+          "duration_ms": 2940,
+          "bbox": [
+            83,
+            143,
+            251,
+            291
+          ],
+          "gif": "bridge\\assets\\clawd_rlcd\\size-56\\gifs\\clawd-building.gif"
+        },
+        {
+          "source": ".tmp\\rlcd_gif_overlay\\clawd-carrying.gif",
+          "name": "clawd-carrying.gif",
+          "size": 56,
+          "frame_count": 45,
+          "duration_ms": 2990,
+          "bbox": [
+            84,
+            173,
+            220,
+            288
+          ],
+          "gif": "bridge\\assets\\clawd_rlcd\\size-56\\gifs\\clawd-carrying.gif"
+        },
+        {
+          "source": ".tmp\\rlcd_gif_overlay\\clawd-error.gif",
+          "name": "clawd-error.gif",
+          "size": 56,
+          "frame_count": 45,
+          "duration_ms": 2990,
+          "bbox": [
+            76,
+            132,
+            231,
+            289
+          ],
+          "gif": "bridge\\assets\\clawd_rlcd\\size-56\\gifs\\clawd-error.gif"
+        },
+        {
+          "source": ".tmp\\rlcd_gif_overlay\\clawd-happy.gif",
+          "name": "clawd-happy.gif",
+          "size": 56,
+          "frame_count": 45,
+          "duration_ms": 2990,
+          "bbox": [
+            46,
+            99,
+            247,
+            281
+          ],
+          "gif": "bridge\\assets\\clawd_rlcd\\size-56\\gifs\\clawd-happy.gif"
+        },
+        {
+          "source": ".tmp\\rlcd_gif_overlay\\clawd-idle-reading.gif",
+          "name": "clawd-idle-reading.gif",
+          "size": 56,
+          "frame_count": 60,
+          "duration_ms": 3980,
+          "bbox": [
+            88,
+            165,
+            205,
+            275
+          ],
+          "gif": "bridge\\assets\\clawd_rlcd\\size-56\\gifs\\clawd-idle-reading.gif"
+        },
+        {
+          "source": ".tmp\\rlcd_gif_overlay\\clawd-idle.gif",
+          "name": "clawd-idle.gif",
+          "size": 56,
+          "frame_count": 48,
+          "duration_ms": 3190,
+          "bbox": [
+            85,
+            193,
+            215,
+            281
+          ],
+          "gif": "bridge\\assets\\clawd_rlcd\\size-56\\gifs\\clawd-idle.gif"
+        },
+        {
+          "source": ".tmp\\rlcd_gif_overlay\\clawd-juggling.gif",
+          "name": "clawd-juggling.gif",
+          "size": 56,
+          "frame_count": 45,
+          "duration_ms": 2990,
+          "bbox": [
+            81,
+            148,
+            219,
+            281
+          ],
+          "gif": "bridge\\assets\\clawd_rlcd\\size-56\\gifs\\clawd-juggling.gif"
+        },
+        {
+          "source": ".tmp\\rlcd_gif_overlay\\clawd-mini-enter.gif",
+          "name": "clawd-mini-enter.gif",
+          "size": 56,
+          "frame_count": 52,
+          "duration_ms": 3470,
+          "bbox": [
+            92,
+            103,
+            275,
+            289
+          ],
+          "gif": "bridge\\assets\\clawd_rlcd\\size-56\\gifs\\clawd-mini-enter.gif"
+        },
+        {
+          "source": ".tmp\\rlcd_gif_overlay\\clawd-notification.gif",
+          "name": "clawd-notification.gif",
+          "size": 56,
+          "frame_count": 90,
+          "duration_ms": 5990,
+          "bbox": [
+            76,
+            126,
+            214,
+            281
+          ],
+          "gif": "bridge\\assets\\clawd_rlcd\\size-56\\gifs\\clawd-notification.gif"
+        },
+        {
+          "source": ".tmp\\rlcd_gif_overlay\\clawd-sleeping.gif",
+          "name": "clawd-sleeping.gif",
+          "size": 56,
+          "frame_count": 45,
+          "duration_ms": 2990,
+          "bbox": [
+            78,
+            135,
+            222,
+            281
+          ],
+          "gif": "bridge\\assets\\clawd_rlcd\\size-56\\gifs\\clawd-sleeping.gif"
+        },
+        {
+          "source": ".tmp\\rlcd_gif_overlay\\clawd-sweeping.gif",
+          "name": "clawd-sweeping.gif",
+          "size": 56,
+          "frame_count": 45,
+          "duration_ms": 2990,
+          "bbox": [
+            63,
+            181,
+            211,
+            296
+          ],
+          "gif": "bridge\\assets\\clawd_rlcd\\size-56\\gifs\\clawd-sweeping.gif"
+        },
+        {
+          "source": ".tmp\\rlcd_gif_overlay\\clawd-thinking.gif",
+          "name": "clawd-thinking.gif",
+          "size": 56,
+          "frame_count": 90,
+          "duration_ms": 6000,
+          "bbox": [
+            76,
+            130,
+            226,
+            271
+          ],
+          "gif": "bridge\\assets\\clawd_rlcd\\size-56\\gifs\\clawd-thinking.gif"
+        },
+        {
+          "source": ".tmp\\rlcd_gif_overlay\\clawd-typing.gif",
+          "name": "clawd-typing.gif",
+          "size": 56,
+          "frame_count": 45,
+          "duration_ms": 2990,
+          "bbox": [
+            92,
+            122,
+            207,
+            279
+          ],
+          "gif": "bridge\\assets\\clawd_rlcd\\size-56\\gifs\\clawd-typing.gif"
+        }
+      ]
+    },
+    "184": {
+      "contact_sheet": "bridge\\assets\\clawd_rlcd\\size-184\\contact_sheet.png",
+      "items": [
+        {
+          "source": ".tmp\\rlcd_gif_overlay\\clawd-building.gif",
+          "name": "clawd-building.gif",
+          "size": 184,
+          "frame_count": 44,
+          "duration_ms": 2940,
+          "bbox": [
+            83,
+            143,
+            251,
+            291
+          ],
+          "gif": "bridge\\assets\\clawd_rlcd\\size-184\\gifs\\clawd-building.gif"
+        },
+        {
+          "source": ".tmp\\rlcd_gif_overlay\\clawd-carrying.gif",
+          "name": "clawd-carrying.gif",
+          "size": 184,
+          "frame_count": 45,
+          "duration_ms": 2990,
+          "bbox": [
+            84,
+            173,
+            220,
+            288
+          ],
+          "gif": "bridge\\assets\\clawd_rlcd\\size-184\\gifs\\clawd-carrying.gif"
+        },
+        {
+          "source": ".tmp\\rlcd_gif_overlay\\clawd-error.gif",
+          "name": "clawd-error.gif",
+          "size": 184,
+          "frame_count": 45,
+          "duration_ms": 2990,
+          "bbox": [
+            76,
+            132,
+            231,
+            289
+          ],
+          "gif": "bridge\\assets\\clawd_rlcd\\size-184\\gifs\\clawd-error.gif"
+        },
+        {
+          "source": ".tmp\\rlcd_gif_overlay\\clawd-happy.gif",
+          "name": "clawd-happy.gif",
+          "size": 184,
+          "frame_count": 45,
+          "duration_ms": 2990,
+          "bbox": [
+            46,
+            99,
+            247,
+            281
+          ],
+          "gif": "bridge\\assets\\clawd_rlcd\\size-184\\gifs\\clawd-happy.gif"
+        },
+        {
+          "source": ".tmp\\rlcd_gif_overlay\\clawd-idle-reading.gif",
+          "name": "clawd-idle-reading.gif",
+          "size": 184,
+          "frame_count": 60,
+          "duration_ms": 3980,
+          "bbox": [
+            88,
+            165,
+            205,
+            275
+          ],
+          "gif": "bridge\\assets\\clawd_rlcd\\size-184\\gifs\\clawd-idle-reading.gif"
+        },
+        {
+          "source": ".tmp\\rlcd_gif_overlay\\clawd-idle.gif",
+          "name": "clawd-idle.gif",
+          "size": 184,
+          "frame_count": 48,
+          "duration_ms": 3190,
+          "bbox": [
+            85,
+            193,
+            215,
+            281
+          ],
+          "gif": "bridge\\assets\\clawd_rlcd\\size-184\\gifs\\clawd-idle.gif"
+        },
+        {
+          "source": ".tmp\\rlcd_gif_overlay\\clawd-juggling.gif",
+          "name": "clawd-juggling.gif",
+          "size": 184,
+          "frame_count": 45,
+          "duration_ms": 2990,
+          "bbox": [
+            81,
+            148,
+            219,
+            281
+          ],
+          "gif": "bridge\\assets\\clawd_rlcd\\size-184\\gifs\\clawd-juggling.gif"
+        },
+        {
+          "source": ".tmp\\rlcd_gif_overlay\\clawd-mini-enter.gif",
+          "name": "clawd-mini-enter.gif",
+          "size": 184,
+          "frame_count": 52,
+          "duration_ms": 3470,
+          "bbox": [
+            92,
+            103,
+            275,
+            289
+          ],
+          "gif": "bridge\\assets\\clawd_rlcd\\size-184\\gifs\\clawd-mini-enter.gif"
+        },
+        {
+          "source": ".tmp\\rlcd_gif_overlay\\clawd-notification.gif",
+          "name": "clawd-notification.gif",
+          "size": 184,
+          "frame_count": 90,
+          "duration_ms": 5990,
+          "bbox": [
+            76,
+            126,
+            214,
+            281
+          ],
+          "gif": "bridge\\assets\\clawd_rlcd\\size-184\\gifs\\clawd-notification.gif"
+        },
+        {
+          "source": ".tmp\\rlcd_gif_overlay\\clawd-sleeping.gif",
+          "name": "clawd-sleeping.gif",
+          "size": 184,
+          "frame_count": 45,
+          "duration_ms": 2990,
+          "bbox": [
+            78,
+            135,
+            222,
+            281
+          ],
+          "gif": "bridge\\assets\\clawd_rlcd\\size-184\\gifs\\clawd-sleeping.gif"
+        },
+        {
+          "source": ".tmp\\rlcd_gif_overlay\\clawd-sweeping.gif",
+          "name": "clawd-sweeping.gif",
+          "size": 184,
+          "frame_count": 45,
+          "duration_ms": 2990,
+          "bbox": [
+            63,
+            181,
+            211,
+            296
+          ],
+          "gif": "bridge\\assets\\clawd_rlcd\\size-184\\gifs\\clawd-sweeping.gif"
+        },
+        {
+          "source": ".tmp\\rlcd_gif_overlay\\clawd-thinking.gif",
+          "name": "clawd-thinking.gif",
+          "size": 184,
+          "frame_count": 90,
+          "duration_ms": 6000,
+          "bbox": [
+            76,
+            130,
+            226,
+            271
+          ],
+          "gif": "bridge\\assets\\clawd_rlcd\\size-184\\gifs\\clawd-thinking.gif"
+        },
+        {
+          "source": ".tmp\\rlcd_gif_overlay\\clawd-typing.gif",
+          "name": "clawd-typing.gif",
+          "size": 184,
+          "frame_count": 45,
+          "duration_ms": 2990,
+          "bbox": [
+            92,
+            122,
+            207,
+            279
+          ],
+          "gif": "bridge\\assets\\clawd_rlcd\\size-184\\gifs\\clawd-typing.gif"
+        }
+      ]
+    }
+  }
+}

@@ -89,13 +89,16 @@ PET_ACTIVE_TTL_SEC = int(os.environ.get("RLCD_PET_ACTIVE_TTL_SEC", "90"))
 PET_COMPLETED_HOLD_SEC = float(os.environ.get("RLCD_PET_COMPLETED_HOLD_SEC", "2.0"))
 PET_SLEEP_SEQUENCE_ENABLED = _bool_env("RLCD_PET_SLEEP_SEQUENCE", True)
 PET_MOUSE_IDLE_TIMEOUT_SEC = _float_env("RLCD_PET_MOUSE_IDLE_SEC", 20.0)
-PET_IDLE_LOOK_DURATION_SEC = _float_env("RLCD_PET_IDLE_LOOK_SEC", 6.5)
-PET_MOUSE_SLEEP_TIMEOUT_SEC = _float_env("RLCD_PET_MOUSE_SLEEP_SEC", 60.0)
+PET_IDLE_LOOK_DURATION_SEC = _float_env("RLCD_PET_IDLE_LOOK_SEC", 14.0)
+PET_MOUSE_SLEEP_TIMEOUT_SEC = _float_env("RLCD_PET_MOUSE_SLEEP_SEC", 300.0)
 PET_YAWN_DURATION_SEC = _float_env("RLCD_PET_YAWN_SEC", 3.0)
 PET_DEEP_SLEEP_TIMEOUT_SEC = _float_env("RLCD_PET_DEEP_SLEEP_SEC", 600.0)
 PET_COLLAPSE_DURATION_SEC = _float_env("RLCD_PET_COLLAPSE_SEC", 0.8)
 PET_WAKE_DURATION_SEC = _float_env("RLCD_PET_WAKE_SEC", 1.5)
-PET_IDLE_LOOK_ASSET = os.environ.get("RLCD_PET_IDLE_LOOK_ASSET", "clawd-idle-yawn.svg").strip()
+PET_IDLE_LOOK_ASSET = os.environ.get("RLCD_PET_IDLE_LOOK_ASSET", "clawd-idle-reading.svg").strip()
+PET_MOUSE_MONITOR_ENABLED = _bool_env("RLCD_PET_MOUSE_MONITOR", os.name == "nt")
+PET_MOUSE_MONITOR_POLL_SEC = max(0.1, _float_env("RLCD_PET_MOUSE_POLL_SEC", 0.5))
+PET_MOUSE_MONITOR_MIN_DELTA = max(1.0, _float_env("RLCD_PET_MOUSE_MIN_DELTA", 1.0))
 INCLUDE_OTHERS = os.environ.get("RLCD_INCLUDE_OTHERS", "1") != "0"
 AUTH_TOKEN = os.environ.get("RLCD_AUTH_TOKEN") or None  # blank/unset = no auth
 ALLOW_QUERY_TOKEN = os.environ.get("RLCD_ALLOW_QUERY_TOKEN", "0") == "1"
@@ -104,6 +107,7 @@ app = FastAPI(title="RLCD bridge", version="0.1.0")
 SIM_PATH = Path(__file__).with_name("sim.html")
 ASSET_DIR = Path(__file__).resolve().parents[1] / "docs" / "assets"
 CLAWD_SVG_DIR = Path(__file__).resolve().parents[1] / "clawd-on-desk" / "assets" / "svg"
+CLAWD_RLCD_GIF_DIR = Path(__file__).with_name("assets") / "clawd_rlcd" / "size-56" / "gifs"
 
 PET_STATE_ASSETS = {
     "idle": "clawd-idle-follow.svg",
@@ -121,6 +125,28 @@ PET_STATE_ASSETS = {
     "carrying": "clawd-working-carrying.svg",
     "sleeping": "clawd-sleeping.svg",
     "waking": "clawd-wake.svg",
+}
+PET_IDLE_ANIMATION_ASSETS = {
+    "clawd-idle-reading.svg",
+}
+PET_ASSET_TO_RLCD_GIF = {
+    "clawd-idle-follow.svg": "clawd-idle.gif",
+    "clawd-idle-reading.svg": "clawd-idle-reading.gif",
+    "clawd-idle-yawn.svg": "clawd-idle-reading.gif",
+    "clawd-idle-doze.svg": "clawd-sleeping.gif",
+    "clawd-collapse-sleep.svg": "clawd-sleeping.gif",
+    "clawd-working-thinking.svg": "clawd-thinking.gif",
+    "clawd-working-typing.svg": "clawd-typing.gif",
+    "clawd-headphones-groove.svg": "clawd-headphones-groove.gif",
+    "clawd-working-juggling.svg": "clawd-juggling.gif",
+    "clawd-working-sweeping.svg": "clawd-sweeping.gif",
+    "clawd-error.svg": "clawd-error.gif",
+    "clawd-happy.svg": "clawd-happy.gif",
+    "clawd-notification.svg": "clawd-notification.gif",
+    "clawd-working-carrying.svg": "clawd-carrying.gif",
+    "clawd-sleeping.svg": "clawd-sleeping.gif",
+    "clawd-wake.svg": "clawd-mini-enter.gif",
+    "clawd-working-building.svg": "clawd-building.gif",
 }
 STATE_PRIORITY = {
     "error": 8,
@@ -184,7 +210,7 @@ CODEX_JSONL_EVENT_STATES = {
 }
 
 _cache_lock = threading.Lock()
-_cache: dict[str, object] = {"report": None, "ts": 0.0, "error": None}
+_cache: dict[str, object] = {"report": None, "ts": 0.0, "error": None, "other": []}
 _pet_lock = threading.RLock()
 _pet_cond = threading.Condition(_pet_lock)
 _pet_state = PetState(updated_at=datetime.now(timezone.utc))
@@ -219,6 +245,7 @@ _weather_override_inflight: set[tuple[object, ...]] = set()
 _weather_override_failures: dict[tuple[object, ...], float] = {}
 WEATHER_OVERRIDE_TTL = int(os.environ.get("RLCD_WEATHER_OVERRIDE_TTL", "600"))
 WEATHER_OVERRIDE_RETRY_SEC = int(os.environ.get("RLCD_WEATHER_OVERRIDE_RETRY_SEC", "30"))
+OTHER_AGENT_ORDER = ("codex", "gemini", "copilot")
 
 
 
@@ -231,6 +258,17 @@ def _pet_stamp(state: PetState) -> str:
 def _pet_asset_for(state: str, subagents: int = 0, sessions: int = 0) -> str:
     if state == "juggling":
         return "clawd-working-juggling.svg"
+    if state == "working":
+        # Tiered working animation, mirroring clawd-on-desk workingTiers
+        # (themes/clawd/theme.json). `sessions` is the cross-agent active
+        # session count from _pet_active_session_count(), so opening a second
+        # or third agent (claude desktop / codex / opencode / ZCode ...) bumps
+        # the tier even though no single agent has multiple sessions.
+        if sessions >= 3:
+            return "clawd-working-building.svg"
+        if sessions >= 2:
+            return "clawd-headphones-groove.svg"
+        return "clawd-working-typing.svg"
     return PET_STATE_ASSETS.get(state, PET_STATE_ASSETS["idle"])
 
 
@@ -246,6 +284,7 @@ PET_SLEEP_NEXT_STATE = {
 }
 PET_SLEEP_TIMER_STATES = set(PET_SLEEP_NEXT_STATE) | {"waking"}
 PET_WAKEABLE_STATES = {"dozing", "collapsing", "sleeping"}
+PET_MOUSE_CANCEL_SLEEP_STATES = {"yawning"} | PET_WAKEABLE_STATES
 PET_WAKE_TRANSITION_TARGET_STATES = {"idle", "thinking", "working", "juggling"}
 
 
@@ -258,7 +297,8 @@ def _pet_idle_elapsed(now: datetime | None = None) -> float:
 
 def _pet_idle_asset() -> str:
     asset = PET_IDLE_LOOK_ASSET or PET_STATE_ASSETS["yawning"]
-    return asset if asset in set(PET_STATE_ASSETS.values()) else PET_STATE_ASSETS["yawning"]
+    valid_assets = set(PET_STATE_ASSETS.values()) | PET_IDLE_ANIMATION_ASSETS
+    return asset if asset in valid_assets else "clawd-idle-reading.svg"
 
 
 def _pet_sleep_delay(state: PetState) -> float | None:
@@ -372,6 +412,96 @@ def _pet_should_wake_before_display(target_state: str, event: str = "") -> bool:
         return False
     with _pet_cond:
         return _pet_state.state in PET_WAKEABLE_STATES
+
+
+def _pet_handle_mouse_activity() -> PetState | None:
+    global _pet_idle_started_at
+    if not PET_SLEEP_SEQUENCE_ENABLED:
+        return None
+    now = datetime.now(timezone.utc)
+    action = ""
+    current: PetState | None = None
+    with _pet_cond:
+        current = _pet_state.model_copy()
+        resolved_state, _ = _pet_resolved_display_state()
+        if resolved_state != "idle":
+            return None
+        if current.state == "idle":
+            if current.asset == PET_STATE_ASSETS["idle"]:
+                _pet_idle_started_at = now
+                _pet_schedule_sleep_timer_locked(current)
+                return current
+            action = "idle-follow"
+        elif current.state in PET_MOUSE_CANCEL_SLEEP_STATES:
+            action = "wake" if current.state in PET_WAKEABLE_STATES else "idle-follow"
+        else:
+            return None
+    if action == "idle-follow":
+        return _pet_display_state(
+            "idle",
+            agent=current.agent if current else "",
+            event="mouse-move",
+            asset_override=PET_STATE_ASSETS["idle"],
+            schedule_return=False,
+            wake_from_sleep=False,
+        )
+    if action == "wake":
+        return _pet_display_state(
+            "idle",
+            agent=current.agent if current else "",
+            event="mouse-move",
+            schedule_return=False,
+            wake_from_sleep=True,
+        )
+    return None
+
+
+def _read_windows_cursor_pos() -> tuple[int, int] | None:
+    if os.name != "nt":
+        return None
+    try:
+        import ctypes
+        from ctypes import wintypes
+    except Exception:
+        return None
+
+    class POINT(ctypes.Structure):
+        _fields_ = [("x", wintypes.LONG), ("y", wintypes.LONG)]
+
+    point = POINT()
+    if not ctypes.windll.user32.GetCursorPos(ctypes.byref(point)):
+        return None
+    return int(point.x), int(point.y)
+
+
+def _mouse_monitor_loop() -> None:
+    last = _read_windows_cursor_pos()
+    while True:
+        time.sleep(PET_MOUSE_MONITOR_POLL_SEC)
+        current = _read_windows_cursor_pos()
+        if current is None:
+            continue
+        if last is None:
+            last = current
+            continue
+        dx = abs(current[0] - last[0])
+        dy = abs(current[1] - last[1])
+        if dx >= PET_MOUSE_MONITOR_MIN_DELTA or dy >= PET_MOUSE_MONITOR_MIN_DELTA:
+            last = current
+            _pet_handle_mouse_activity()
+
+
+_mouse_monitor_started = False
+
+
+def _start_mouse_monitor() -> None:
+    global _mouse_monitor_started
+    if _mouse_monitor_started or not PET_MOUSE_MONITOR_ENABLED:
+        return
+    if _read_windows_cursor_pos() is None:
+        return
+    _mouse_monitor_started = True
+    threading.Thread(target=_mouse_monitor_loop, name="pet-mouse-monitor", daemon=True).start()
 
 
 def _pet_active_session_count() -> int:
@@ -997,10 +1127,59 @@ def _reset_pet_state_for_tests() -> None:
         _pet_cond.notify_all()
 
 
+def _order_other_agents(rows: list[OtherAgentUsage]) -> list[OtherAgentUsage]:
+    def key(row: OtherAgentUsage) -> tuple[int, str]:
+        agent = (row.agent or "").lower()
+        try:
+            return (OTHER_AGENT_ORDER.index(agent), agent)
+        except ValueError:
+            return (len(OTHER_AGENT_ORDER), agent)
+
+    return sorted(rows, key=key)
+
+
+def _merge_other_agents(
+    fresh: list[OtherAgentUsage],
+    fallback: list[OtherAgentUsage],
+) -> list[OtherAgentUsage]:
+    merged: dict[str, OtherAgentUsage] = {}
+    for row in fallback:
+        if row.agent:
+            merged[row.agent.lower()] = row
+    for row in fresh:
+        if row.agent:
+            merged[row.agent.lower()] = row
+    return _order_other_agents(list(merged.values()))
+
+
+def _cached_other_agents_locked() -> list[OtherAgentUsage]:
+    cached = _cache.get("other")
+    if isinstance(cached, list):
+        return [row for row in cached if isinstance(row, OtherAgentUsage)]
+    report = _cache.get("report")
+    if isinstance(report, UsageReport):
+        return list(report.other)
+    return []
+
+
+def _fetch_other_agents_with_fallback() -> list[OtherAgentUsage]:
+    if not INCLUDE_OTHERS:
+        return []
+    with _cache_lock:
+        fallback = _cached_other_agents_locked()
+    try:
+        fresh = fetch_other_agents()
+    except Exception:
+        return fallback
+    if not fresh:
+        return fallback
+    return _merge_other_agents(fresh, fallback)
+
+
 def _build_live_report() -> UsageReport:
     claude, ds_today = fetch_claude()
     claude.limits = fetch_limits()
-    others = fetch_other_agents() if INCLUDE_OTHERS else []
+    others = _fetch_other_agents_with_fallback()
     return UsageReport(
         updated_at=datetime.now(timezone.utc),
         claude=claude,
@@ -1078,9 +1257,15 @@ def _refresh_once() -> None:
     try:
         rep = _build_live_report()
         with _cache_lock:
-            _cache.update(report=rep, ts=time.time(), error=None)
+            _cache.update(report=rep, ts=time.time(), error=None, other=rep.other)
     except Exception as e:
+        others = _fetch_other_agents_with_fallback()
         with _cache_lock:
+            if others:
+                _cache["other"] = others
+                report = _cache.get("report")
+                if isinstance(report, UsageReport):
+                    _cache["report"] = report.model_copy(update={"other": others})
             _cache["error"] = f"{type(e).__name__}: {e}"
 
 
@@ -1097,6 +1282,7 @@ def _start_refresher() -> None:
     global _refresher_started, _pet_idle_started_at
     if _refresher_started:
         _start_codex_log_monitor()
+        _start_mouse_monitor()
         return
     _refresher_started = True
     with _pet_cond:
@@ -1105,6 +1291,7 @@ def _start_refresher() -> None:
             _pet_schedule_sleep_timer_locked(_pet_state.model_copy())
     threading.Thread(target=_refresher_loop, name="usage-refresher", daemon=True).start()
     _start_codex_log_monitor()
+    _start_mouse_monitor()
 
 
 def _mock_report() -> UsageReport:
@@ -1190,13 +1377,15 @@ def simulator_asset(asset_name: str):
 
 @app.get("/sim/clawd/{asset_name}", include_in_schema=False)
 def simulator_clawd_asset(asset_name: str):
-    allowed = set(PET_STATE_ASSETS.values()) | {
-        "clawd-working-juggling.svg",
-        "clawd-working-building.svg",
-    }
+    allowed = set(PET_ASSET_TO_RLCD_GIF)
     if asset_name not in allowed:
         raise HTTPException(status_code=404, detail="asset not found")
-    return FileResponse(CLAWD_SVG_DIR / asset_name, media_type="image/svg+xml")
+    rlcd_gif = PET_ASSET_TO_RLCD_GIF.get(asset_name)
+    if rlcd_gif:
+        gif_path = CLAWD_RLCD_GIF_DIR / rlcd_gif
+        if gif_path.exists():
+            return FileResponse(gif_path, media_type="image/gif", headers={"Cache-Control": "no-store"})
+    return FileResponse(CLAWD_SVG_DIR / asset_name, media_type="image/svg+xml", headers={"Cache-Control": "no-store"})
 
 
 def _check_auth(token_header: str | None, token_query: str | None) -> None:

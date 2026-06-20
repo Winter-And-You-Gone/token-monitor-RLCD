@@ -37,13 +37,12 @@ static void clock_task(void *arg)
         ntp_now_hm(hm, sizeof(hm));
         float t = 0, h = 0;
         bool ok = (shtc3_read(&t, &h) == ESP_OK);
-        float bat_v = 0;
-        int bat_pct = 0;
-        bool bat_ok = (battery_read(&bat_v, &bat_pct) == ESP_OK);
+        battery_status_t bat = {};
+        bool bat_ok = (battery_read_status(&bat) == ESP_OK);
         if (Lvgl_lock(-1)) {
             ui_app_set_time(hm);
             ui_app_set_env(t, h, ok);
-            ui_app_set_battery(bat_v, bat_pct, bat_ok);
+            ui_app_set_battery(bat.voltage_v, bat.percent, bat_ok, bat.power == BATTERY_POWER_TYPEC);
             Lvgl_unlock();
         }
         vTaskDelay(pdMS_TO_TICKS(10000));

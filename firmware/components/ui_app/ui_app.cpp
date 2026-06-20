@@ -236,26 +236,12 @@ static void pet_show_frame(void)
         lv_image_set_src(img_pet, body);
         pet_last_body_frame = body;
     }
-    if (img_pet_eyes && pet_seq->eye_frames) {
-        const lv_image_dsc_t *eyes = pet_seq->eye_frames[frame];
-        if (eyes != pet_last_eye_frame) {
-            lv_image_set_src(img_pet_eyes, eyes);
-            pet_last_eye_frame = eyes;
-        }
-    }
     if (img_pet_big && pet_big_seq && pet_big_seq->frames && pet_big_seq->frame_count > 0) {
         uint16_t big_frame = (uint16_t) (pet_frame % pet_big_seq->frame_count);
         const lv_image_dsc_t *big_body = pet_big_seq->frames[big_frame];
         if (big_body != pet_big_last_body_frame) {
             lv_image_set_src(img_pet_big, big_body);
             pet_big_last_body_frame = big_body;
-        }
-        if (img_pet_big_eyes && pet_big_seq->eye_frames) {
-            const lv_image_dsc_t *big_eyes = pet_big_seq->eye_frames[big_frame];
-            if (big_eyes != pet_big_last_eye_frame) {
-                lv_image_set_src(img_pet_big_eyes, big_eyes);
-                pet_big_last_eye_frame = big_eyes;
-            }
         }
     }
 }
@@ -302,19 +288,17 @@ static void pet_timer_cb(lv_timer_t *timer)
     if (pet_timer) lv_timer_set_period(pet_timer, PET_TIMER_MS);
 }
 
-static lv_obj_t *mkpet_sized(lv_obj_t *p, int x, int y, int w, int h, lv_color_t color)
+static lv_obj_t *mkpet_sized(lv_obj_t *p, int x, int y, int w, int h)
 {
     lv_obj_t *im = lv_image_create(p);
     lv_obj_set_pos(im, x, y);
     lv_obj_set_size(im, w, h);
-    lv_obj_set_style_image_recolor(im, color, 0);
-    lv_obj_set_style_image_recolor_opa(im, LV_OPA_COVER, 0);
     return im;
 }
 
-static lv_obj_t *mkpet(lv_obj_t *p, int x, int y, lv_color_t color)
+static lv_obj_t *mkpet(lv_obj_t *p, int x, int y)
 {
-    return mkpet_sized(p, x, y, 56, 56, color);
+    return mkpet_sized(p, x, y, 56, 56);
 }
 
 static void short_model_name(const char *name, char *out, size_t n)
@@ -476,16 +460,16 @@ static void carousel_timer_cb(lv_timer_t *timer)
 static void mk_pet_big_page(lv_obj_t *screen)
 {
     const pet_anim_sequence_t *idle = ui_pet_big_anim_idle();
-    int pet_w = idle ? idle->width : 176;
-    int pet_h = idle ? idle->height : 176;
+    int pet_w = idle ? idle->width : 184;
+    int pet_h = idle ? idle->height : 184;
     int pet_x = (VIEW_W - pet_w) / 2;
     int pet_y = (PET_BIG_PAGE_H - pet_h) / 2;
 
     pet_big_page = mkbare(screen, 0, 0, VIEW_W, PET_BIG_PAGE_H);
     lv_obj_set_style_bg_color(pet_big_page, WHITE, 0);
     lv_obj_set_style_bg_opa(pet_big_page, LV_OPA_COVER, 0);
-    img_pet_big = mkpet_sized(pet_big_page, pet_x, pet_y, pet_w, pet_h, INK);
-    img_pet_big_eyes = mkpet_sized(pet_big_page, pet_x, pet_y, pet_w, pet_h, WHITE);
+    img_pet_big = mkpet_sized(pet_big_page, pet_x, pet_y, pet_w, pet_h);
+    img_pet_big_eyes = NULL;
     lv_obj_add_flag(pet_big_page, LV_OBJ_FLAG_HIDDEN);
 }
 
@@ -506,16 +490,16 @@ void ui_app_init(void)
     carousel_animating = false;
 
     lbl_time   = mklabel(s, 10, 4, &lv_font_montserrat_28, "--:--");
-    lbl_indoor = mklabel(s, 12, 44, FONT_CN14, "室内 --.-C  --%");
-    img_pet    = mkpet(s, 164, 5, INK);
-    img_pet_eyes = mkpet(s, 164, 5, WHITE);
+    lbl_indoor = mklabel(s, 12, 44, FONT_CN14, "温度 --.-\xE2\x84\x83""  湿度 --%");
+    img_pet    = mkpet(s, 164, 5);
+    img_pet_eyes = NULL;
     img_wx     = mkicon(s, 280, 8, &icon_wx_cloud);
     lbl_wx_temp = mkalign(s, 308, 10, 80, LV_TEXT_ALIGN_RIGHT, &lv_font_montserrat_20, "--\xC2\xB0""C");
     lbl_wx_city = mkalign(s, 208, 44, 180, LV_TEXT_ALIGN_RIGHT, FONT_CN14, "等待");
     mkdiv(s, 10, 66, 380, 2);
     mkdiv(s, 10, 268, 380, 2);
     lbl_status = mkalign(s, 12, 274, 276, LV_TEXT_ALIGN_LEFT, FONT_CN14, last_status_line);
-    lbl_battery_title = mkalign(s, 292, 274, 32, LV_TEXT_ALIGN_LEFT, FONT_CN14, "电量");
+    lbl_battery_title = mkalign(s, 292, 274, 96, LV_TEXT_ALIGN_LEFT, FONT_CN14, "电量");
     battery_body = mkbattery_body(s, 326, 278, 20, 9);
     battery_fill = mkdiv_obj(s, 328, 280, 1, 5);
     battery_tip = mkdiv_obj(s, 348, 281, 2, 3);
@@ -545,7 +529,7 @@ void ui_app_init(void)
     pet_timer = lv_timer_create(pet_timer_cb, PET_TIMER_MS, NULL);
     have_data = false;
     logged_first_report = false;
-    ESP_LOGI(TAG, "UI build marker UI v12, model_col=112, token_col=60, pet_eye_overlay=1, carousel=30fps-fast, pet_art=crab-focus, battery=1, pet_big_page=1");
+    ESP_LOGI(TAG, "UI build marker UI v13, model_col=112, token_col=60, pet_eye_knockout=1, carousel=30fps-fast, pet_art=crab-focus, battery=1, pet_big_page=1, pet_big_size=184");
 }
 
 static const char *weather_cn(const char *condition)
@@ -734,7 +718,7 @@ void ui_app_update(const usage_report_t *r)
         const char *updated = "--:--";
         if (r->updated_at[2] == ':' ) updated = r->updated_at;
         else if (r->updated_at[11]) updated = r->updated_at + 11;
-        snprintf(last_status_line, sizeof(last_status_line), "%s 来源=%s 更新=%.5s",
+        snprintf(last_status_line, sizeof(last_status_line), "%s 来源 %s  更新 %.5s",
                  r->stale ? "离线" : "在线", r->source[0] ? r->source : "ccusage", updated);
         lv_label_set_text(lbl_status, last_status_line);
     }
@@ -768,15 +752,34 @@ void ui_app_toggle_pet_page(void)
 void ui_app_set_env(float temp_c, float humidity, bool ok)
 {
     char b[40];
-    if (ok) snprintf(b, sizeof(b), "室内 %.1fC  %.0f%%", temp_c, humidity);
-    else    snprintf(b, sizeof(b), "室内 --");
+    if (ok) snprintf(b, sizeof(b), "温度 %.1f\xE2\x84\x83""  湿度 %.0f%%", temp_c, humidity);
+    else    snprintf(b, sizeof(b), "温度 --.-\xE2\x84\x83""  湿度 --%%");
     lv_label_set_text(lbl_indoor, b);
 }
 
-void ui_app_set_battery(float voltage_v, int percent, bool ok)
+static void set_battery_parts_hidden(bool hidden)
+{
+    lv_obj_t *parts[] = { battery_body, battery_fill, battery_tip };
+    for (size_t i = 0; i < sizeof(parts) / sizeof(parts[0]); ++i) {
+        if (!parts[i]) continue;
+        if (hidden) lv_obj_add_flag(parts[i], LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_clear_flag(parts[i], LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+void ui_app_set_battery(float voltage_v, int percent, bool ok, bool typec_power)
 {
     char b[20];
-    if (ok) {
+    if (ok && typec_power) {
+        if (lbl_battery_title) lv_label_set_text(lbl_battery_title, "TYPE-C 供电");
+        if (lbl_battery_pct) lv_obj_add_flag(lbl_battery_pct, LV_OBJ_FLAG_HIDDEN);
+        set_battery_parts_hidden(true);
+        (void)voltage_v;
+        return;
+    } else if (ok) {
+        if (lbl_battery_title) lv_label_set_text(lbl_battery_title, "电量");
+        if (lbl_battery_pct) lv_obj_clear_flag(lbl_battery_pct, LV_OBJ_FLAG_HIDDEN);
+        set_battery_parts_hidden(false);
         if (percent < 0) percent = 0;
         if (percent > 100) percent = 100;
         snprintf(b, sizeof(b), "%d%%", percent);
@@ -790,7 +793,10 @@ void ui_app_set_battery(float voltage_v, int percent, bool ok)
             }
         }
     } else {
+        if (lbl_battery_title) lv_label_set_text(lbl_battery_title, "电量");
+        if (lbl_battery_pct) lv_obj_clear_flag(lbl_battery_pct, LV_OBJ_FLAG_HIDDEN);
         snprintf(b, sizeof(b), "--%%");
+        set_battery_parts_hidden(false);
         if (battery_fill) lv_obj_add_flag(battery_fill, LV_OBJ_FLAG_HIDDEN);
     }
     if (lbl_battery_pct) lv_label_set_text(lbl_battery_pct, b);
@@ -817,10 +823,10 @@ void ui_app_mark_stale(void)
 {
     if (have_data) {
         lv_label_set_text(lbl_wx_city, "STALE");
-        if (lbl_status) lv_label_set_text(lbl_status, "离线 来源=bridge 更新=--:--");
+        if (lbl_status) lv_label_set_text(lbl_status, "离线 来源 bridge  更新 --:--");
     } else {
         set_all_claude_reset("等待服务");
         lv_label_set_text(lbl_wx_city, "等待服务");
-        if (lbl_status) lv_label_set_text(lbl_status, "离线 来源=bridge 更新=--:--");
+        if (lbl_status) lv_label_set_text(lbl_status, "离线 来源 bridge  更新 --:--");
     }
 }

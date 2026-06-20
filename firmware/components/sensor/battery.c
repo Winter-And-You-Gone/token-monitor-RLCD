@@ -4,6 +4,7 @@
 #include "esp_adc/adc_cali_scheme.h"
 #include "esp_adc/adc_oneshot.h"
 #include "esp_log.h"
+#include "driver/usb_serial_jtag.h"
 
 #include <stdbool.h>
 
@@ -13,6 +14,8 @@
 #define BAT_DIVIDER_RATIO 3.0f
 #define BAT_SAMPLE_COUNT 16
 #define BAT_FALLBACK_FULL_SCALE_MV 3300
+#define BAT_PRESENT_MIN_VOLTAGE 3.15f
+#define BAT_VALID_MAX_VOLTAGE 4.35f
 
 static const char *TAG = "battery";
 static adc_oneshot_unit_handle_t s_adc;
@@ -88,6 +91,16 @@ esp_err_t battery_init(void)
 
 esp_err_t battery_read(float *voltage_v, int *percent)
 {
+    battery_status_t status = {};
+    esp_err_t err = battery_read_status(&status);
+    if (err != ESP_OK) return err;
+    if (voltage_v) *voltage_v = status.voltage_v;
+    if (percent) *percent = status.percent;
+    return ESP_OK;
+}
+
+esp_err_t battery_read_status(battery_status_t *status)
+{
     if (!s_ready) {
         esp_err_t err = battery_init();
         if (err != ESP_OK) return err;
@@ -115,7 +128,19 @@ esp_err_t battery_read(float *voltage_v, int *percent)
 
     (void)raw_sum;
     float voltage = (mv_sum / (float)samples) * BAT_DIVIDER_RATIO / 1000.0f;
-    if (voltage_v) *voltage_v = voltage;
-    if (percent) *percent = battery_percent_from_voltage(voltage);
+    int pct = battery_percent_from_voltage(voltage);
+    battery_power_t power = BATTERY_POWER_BATTERY;
+    if (usb_serial_jtag_is_connected() ||
+        voltage < BAT_PRESENT_MIN_VOLTAGE ||
+        voltage > BAT_VALID_MAX_VOLTAGE) {
+        power = BATTERY_POWER_TYPEC;
+    }
+    if (status) {
+        status->voltage_v = voltage;
+        status->percent = pct;
+        status->power = power;
+    }
+    ESP_LOGD(TAG, "battery raw=%d mv=%d v=%.3f pct=%d power=%d",
+             raw_sum / samples, mv_sum / samples, voltage, pct, (int)power);
     return ESP_OK;
 }

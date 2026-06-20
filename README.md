@@ -74,13 +74,14 @@ Linux / macOS 主机                        ESP32-S3-RLCD-4.2
 # 1. uv（Python 包管理器）
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# 2. Node + npx（ccusage 是 npm 包）
+# 2. Node/npm + 全局 ccusage（bridge 运行时不会调用 npx/@latest）
 # Ubuntu/Debian：
 sudo apt install nodejs npm
 # 或使用 nvm：https://github.com/nvm-sh/nvm
+npm install -g ccusage
 
 # 3. 验证 ccusage 可用
-npx -y ccusage@latest --help
+ccusage --help
 ```
 
 ### 第二步 — 克隆并本地测试 bridge
@@ -139,6 +140,12 @@ RLCD_PORT=7777              # 监听端口（默认 7777）
 RLCD_AUTH_TOKEN=<随机串>    # 非本地访问时必须设置
 RLCD_ALLOW_QUERY_TOKEN=0    # 默认只接受 X-RLCD-Token header；旧客户端需要 ?token= 时才设为 1
 RLCD_TZ=Asia/Hong_Kong      # 用量“今日/本月”的切日时区（默认 Asia/Hong_Kong）
+RLCD_PET_MOUSE_MONITOR=1    # Windows bridge 端监测鼠标移动，移动时重置/唤醒小螃蟹 idle-sleep 计时
+RLCD_PET_MOUSE_POLL_SEC=0.5 # 鼠标位置轮询间隔
+RLCD_PET_MOUSE_IDLE_SEC=20   # 小螃蟹空闲多久后播放一次 idle 小动作
+RLCD_PET_IDLE_LOOK_SEC=14    # idle 小动作持续时间；默认使用 reading 动画
+RLCD_PET_MOUSE_SLEEP_SEC=300 # 无新事件多久后进入打哈欠/打盹/睡觉；原版 Clawd 是 60 秒
+RLCD_PET_SLEEP_SEQUENCE=1    # 设为 0 可关闭自动睡眠序列
 RLCD_WEATHER_CMA=1         # 城市名优先使用中国气象局 CMA 数据；设为 0 可关闭
 RLCD_WEATHER_LAT=30.2741   # 坐标兜底纬度（默认杭州）
 RLCD_WEATHER_LON=120.1551  # 坐标兜底经度

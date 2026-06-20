@@ -7,21 +7,58 @@ so we inherit upstream fixes for free.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shlex
 import shutil
 import subprocess
+import threading
 import time
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
 from schema import ActiveBlock, Bucket, ClaudeUsage, ModelBreakdown, OtherAgentUsage
 
 
-CCUSAGE_CMD = os.environ.get("CCUSAGE_CMD", "npx -y ccusage@latest")
+LOG = logging.getLogger(__name__)
+PROXY_ENV_VARS = (
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "all_proxy",
+)
+
+
+def _int_env(name: str, default: int, minimum: int = 1) -> int:
+    try:
+        value = int(os.environ.get(name, str(default)))
+    except ValueError:
+        return default
+    return max(minimum, value)
+
+
 # 5h window with claude only; daily/monthly include all agents by default
-DEFAULT_TIMEOUT = 60
+DEFAULT_TIMEOUT = _int_env("CCUSAGE_TIMEOUT_SEC", 20, minimum=1)
+OTHER_TIMEOUT = _int_env("CCUSAGE_OTHER_TIMEOUT_SEC", 20, minimum=1)
+BLOCKS_CACHE_TTL_SEC = _int_env("CCUSAGE_BLOCK_CACHE_TTL_SEC", 60, minimum=1)
+PERIOD_CACHE_TTL_SEC = _int_env("CCUSAGE_PERIOD_CACHE_TTL_SEC", 300, minimum=1)
+DEFAULT_CACHE_TTL_SEC = _int_env("CCUSAGE_CACHE_TTL_SEC", 60, minimum=1)
+CCUSAGE_OFFLINE = os.environ.get("CCUSAGE_OFFLINE", "1").strip().lower() not in {
+    "0",
+    "false",
+    "no",
+    "off",
+}
+OTHER_AGENTS = tuple(
+    agent.strip().lower()
+    for agent in os.environ.get("RLCD_OTHER_AGENTS", "codex").split(",")
+    if agent.strip()
+)
 
 # Optional limit overrides (Anthropic doesn't publish plan limits programmatically)
 WEEKLY_LIMIT_USD = float(os.environ.get("RLCD_WEEKLY_LIMIT_USD", "0")) or None
@@ -29,20 +66,16 @@ BLOCK_LIMIT_USD = float(os.environ.get("RLCD_BLOCK_LIMIT_USD", "0")) or None
 DEFAULT_TOKEN_LIMIT = os.environ.get("RLCD_TOKEN_LIMIT", "100M")
 
 
-def _configured_timezone_name() -> str | None:
-    name = os.environ.get("RLCD_TZ") or os.environ.get("TZ") or "Asia/Hong_Kong"
-    try:
-        ZoneInfo(name)
-    except Exception:
-        return None
-    return name
+def _configured_timezone_name() -> str:
+    return os.environ.get("RLCD_TZ") or os.environ.get("TZ") or "Asia/Hong_Kong"
 
 
 def _configured_timezone():
-    name = _configured_timezone_name()
-    if name:
+    name = os.environ.get("RLCD_TZ") or os.environ.get("TZ") or "Asia/Hong_Kong"
+    try:
         return ZoneInfo(name)
-    return timezone(timedelta(hours=8), name="UTC+8")
+    except Exception:
+        return timezone(timedelta(hours=8), name="UTC+8")
 
 
 LOCAL_TZ_NAME = _configured_timezone_name()
@@ -72,38 +105,230 @@ WEEKLY_LIMIT_TOKENS = _parse_token_limit(os.environ.get("RLCD_WEEKLY_LIMIT_TOKEN
 
 
 def _ccusage_args(args: list[str]) -> list[str]:
+    out = list(args)
     if (
         LOCAL_TZ_NAME
-        and any(part in {"daily", "monthly"} for part in args)
-        and "--timezone" not in args
-        and "-z" not in args
+        and any(part in {"daily", "monthly"} for part in out)
+        and "--timezone" not in out
+        and "-z" not in out
     ):
-        return args + ["--timezone", LOCAL_TZ_NAME]
-    return args
+        out += ["--timezone", LOCAL_TZ_NAME]
+    if CCUSAGE_OFFLINE and "--offline" not in out:
+        out.append("--offline")
+    return out
 
 
-def _run(args: list[str]) -> dict[str, Any]:
-    base_cmd = shlex.split(CCUSAGE_CMD)
-    resolved = shutil.which(base_cmd[0])
-    if resolved:
-        base_cmd[0] = resolved
-    effective_args = _ccusage_args(args)
-    cmd = base_cmd + effective_args
+@dataclass
+class _CcusageCacheEntry:
+    value: dict[str, Any]
+    ts: float
+
+
+@dataclass
+class _CcusageInflight:
+    event: threading.Event
+    result: dict[str, Any] | None = None
+    error: BaseException | None = None
+
+
+_ccusage_cache: dict[tuple[str, ...], _CcusageCacheEntry] = {}
+_ccusage_inflight: dict[tuple[str, ...], _CcusageInflight] = {}
+_ccusage_lock = threading.Lock()
+
+
+def _split_configured_command(value: str) -> list[str]:
+    return shlex.split(value, posix=(os.name != "nt"))
+
+
+def _format_args(args: list[str]) -> str:
+    return " ".join(shlex.quote(part) for part in args)
+
+
+def _command_label(command: list[str]) -> str:
+    if not command:
+        return "ccusage"
+    return Path(command[0]).name or command[0]
+
+
+def _reject_forbidden_command(command: list[str]) -> None:
+    lowered = [part.lower() for part in command]
+    if any("@latest" in part for part in lowered):
+        raise RuntimeError(
+            "Runtime ccusage command must not use @latest. "
+            "Install a local command once with: npm install -g ccusage"
+        )
+    executable = Path(command[0]).name.lower() if command else ""
+    if executable in {"npx", "npx.cmd", "npx.exe"}:
+        raise RuntimeError(
+            "Runtime ccusage command must not use npx. "
+            "Install a local command once with: npm install -g ccusage"
+        )
+
+
+def _resolve_ccusage_command() -> list[str]:
+    configured = os.environ.get("CCUSAGE_CMD", "").strip()
+    if configured:
+        command = _split_configured_command(configured)
+        if not command:
+            raise RuntimeError("CCUSAGE_CMD is empty")
+        _reject_forbidden_command(command)
+        resolved = shutil.which(command[0])
+        if resolved:
+            command[0] = resolved
+        elif not Path(command[0]).exists():
+            raise RuntimeError(
+                "configured CCUSAGE_CMD was not found. "
+                "Install a local command once with: npm install -g ccusage"
+            )
+        return command
+
+    resolved = shutil.which("ccusage")
+    if not resolved:
+        raise RuntimeError(
+            "ccusage command not found. Install it once with: npm install -g ccusage"
+        )
+    return [resolved]
+
+
+def _subprocess_env_without_proxy() -> dict[str, str]:
     env = os.environ.copy()
-    env.setdefault("npm_config_cache", "/tmp/.npm-cache")
-    proc = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        timeout=DEFAULT_TIMEOUT,
-        env=env,
-        check=False,
+    for name in PROXY_ENV_VARS:
+        env.pop(name, None)
+    return env
+
+
+def _ccusage_cache_ttl(args: list[str]) -> int:
+    if args[:3] == ["blocks", "--active", "--json"]:
+        return BLOCKS_CACHE_TTL_SEC
+    if any(part in {"daily", "monthly"} for part in args):
+        return PERIOD_CACHE_TTL_SEC
+    return DEFAULT_CACHE_TTL_SEC
+
+
+def _ccusage_cache_key(args: list[str]) -> tuple[str, ...]:
+    return (os.environ.get("CCUSAGE_CMD", "").strip(), *args)
+
+
+def _run(args: list[str], timeout: int | None = None) -> dict[str, Any]:
+    effective_args = _ccusage_args(args)
+    timeout = DEFAULT_TIMEOUT if timeout is None else timeout
+    ttl = _ccusage_cache_ttl(effective_args)
+    cache_key = _ccusage_cache_key(effective_args)
+
+    while True:
+        with _ccusage_lock:
+            now = time.monotonic()
+            cached = _ccusage_cache.get(cache_key)
+            if cached and now - cached.ts < ttl:
+                LOG.info(
+                    "ccusage cache hit args=%s age=%.1fs ttl=%ss",
+                    _format_args(effective_args),
+                    now - cached.ts,
+                    ttl,
+                )
+                return cached.value
+
+            inflight = _ccusage_inflight.get(cache_key)
+            if inflight:
+                if cached:
+                    LOG.info(
+                        "ccusage stale cache served while refresh is in-flight "
+                        "args=%s age=%.1fs ttl=%ss",
+                        _format_args(effective_args),
+                        now - cached.ts,
+                        ttl,
+                    )
+                    return cached.value
+                LOG.info("ccusage waiting for in-flight query args=%s", _format_args(effective_args))
+            else:
+                inflight = _CcusageInflight(event=threading.Event())
+                _ccusage_inflight[cache_key] = inflight
+                LOG.info("ccusage cache miss args=%s ttl=%ss", _format_args(effective_args), ttl)
+                break
+
+        if not inflight.event.wait(timeout + 5):
+            raise TimeoutError(f"timed out waiting for in-flight ccusage query: {_format_args(effective_args)}")
+        if inflight.error:
+            raise inflight.error
+        if inflight.result is not None:
+            return inflight.result
+
+    started = time.monotonic()
+    try:
+        result = _execute_ccusage_uncached(effective_args, timeout)
+    except BaseException as exc:
+        elapsed = time.monotonic() - started
+        LOG.warning(
+            "ccusage query failed args=%s elapsed=%.2fs error=%s",
+            _format_args(effective_args),
+            elapsed,
+            exc,
+        )
+        with _ccusage_lock:
+            current = _ccusage_inflight.pop(cache_key, None)
+            if current is inflight:
+                inflight.error = exc
+                inflight.event.set()
+        raise
+
+    elapsed = time.monotonic() - started
+    with _ccusage_lock:
+        _ccusage_cache[cache_key] = _CcusageCacheEntry(value=result, ts=time.monotonic())
+        current = _ccusage_inflight.pop(cache_key, None)
+        if current is inflight:
+            inflight.result = result
+            inflight.event.set()
+    LOG.info("ccusage executed local command args=%s elapsed=%.2fs", _format_args(effective_args), elapsed)
+    return result
+
+
+def _execute_ccusage_uncached(effective_args: list[str], timeout: int) -> dict[str, Any]:
+    base_cmd = _resolve_ccusage_command()
+    cmd = base_cmd + effective_args
+    env = _subprocess_env_without_proxy()
+    creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
+    LOG.info(
+        "ccusage starting local command=%s args=%s timeout=%ss",
+        _command_label(base_cmd),
+        _format_args(effective_args),
+        timeout,
     )
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=env,
+        creationflags=creationflags,
+    )
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        _kill_process_tree(proc)
+        try:
+            stdout, stderr = proc.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            stdout, stderr = "", ""
+        raise subprocess.TimeoutExpired(
+            cmd, timeout, output=stdout, stderr=stderr
+        ) from exc
     if proc.returncode != 0:
         raise RuntimeError(
-            f"ccusage failed ({' '.join(effective_args)}): {proc.stderr.strip()[:400]}"
+            f"ccusage failed ({' '.join(effective_args)}): {stderr.strip()[:400]}"
         )
-    return json.loads(proc.stdout)
+    return json.loads(stdout)
+
+
+def _kill_process_tree(proc: subprocess.Popen[str]) -> None:
+    if os.name == "nt":
+        subprocess.run(
+            ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        return
+    proc.kill()
 
 
 def _bucket(tokens: int, cost: float, limit_usd: float | None = None,
@@ -296,16 +521,16 @@ def fetch_claude() -> tuple[ClaudeUsage, int]:
     return usage, ds_today
 
 
-def fetch_other_agents() -> list[OtherAgentUsage]:
-    """Best-effort per-agent breakdown for codex/gemini/copilot using ccusage daily --instances.
+def fetch_other_agents(agents: tuple[str, ...] | None = None) -> list[OtherAgentUsage]:
+    """Best-effort per-agent breakdown for Codex and optional peer agents.
 
     Returns [] silently if no other agents have any data.
     """
     out: list[OtherAgentUsage] = []
-    for agent in ("codex", "gemini", "copilot"):
+    for agent in agents if agents is not None else OTHER_AGENTS:
         try:
-            daily = _run([agent, "daily", "--json"])
-            monthly = _run([agent, "monthly", "--json"])
+            daily = _run([agent, "daily", "--json"], timeout=OTHER_TIMEOUT)
+            monthly = _run([agent, "monthly", "--json"], timeout=OTHER_TIMEOUT)
         except Exception:
             continue
         daily_entries = daily.get("daily", []) or []

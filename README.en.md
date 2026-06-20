@@ -79,13 +79,14 @@ On the machine where Claude Code runs (Linux):
 # 1. uv (Python package manager)
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# 2. Node + npx  (ccusage is an npm package)
+# 2. Node/npm + global ccusage (the bridge runtime does not call npx/@latest)
 # Ubuntu/Debian:
 sudo apt install nodejs npm
 # or use nvm: https://github.com/nvm-sh/nvm
+npm install -g ccusage
 
 # 3. Verify ccusage works
-npx -y ccusage@latest --help
+ccusage --help
 ```
 
 ### Step 2 — Clone and test the bridge
@@ -133,6 +134,12 @@ Create `bridge/.env` (git-ignored) with any of these:
 RLCD_HOST=0.0.0.0          # bind address (default 0.0.0.0)
 RLCD_PORT=7777              # bind port    (default 7777)
 RLCD_AUTH_TOKEN=<random>   # required when bridge is reachable beyond loopback
+RLCD_PET_MOUSE_MONITOR=1    # Windows bridge monitors mouse movement to reset/wake pet idle-sleep timing
+RLCD_PET_MOUSE_POLL_SEC=0.5 # mouse position poll interval
+RLCD_PET_MOUSE_IDLE_SEC=20   # seconds with no pet events before one idle animation
+RLCD_PET_IDLE_LOOK_SEC=14    # idle animation duration; default uses the reading animation
+RLCD_PET_MOUSE_SLEEP_SEC=300 # seconds with no pet events before yawning/dozing/sleeping; original Clawd is 60
+RLCD_PET_SLEEP_SEQUENCE=1    # set 0 to disable the automatic sleep sequence
 RLCD_WEATHER_LAT=22.5431   # your latitude  (default: Shenzhen)
 RLCD_WEATHER_LON=114.0579  # your longitude
 RLCD_WEATHER_CITY=MYTOWN   # city label on device (≤8 chars)

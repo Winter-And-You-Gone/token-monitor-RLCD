@@ -28,9 +28,13 @@ firmware/main/secrets.h
 .playwright-cli/
 bridge/*.log
 *.rlcd-bak-*
+*.bak
 browser-sim-visible.png
+.tmp/
+compiler_check.txt
 
 # Vendor reference (kept locally; not committed)
+clawd-on-desk/
 ESP32-S3-RLCD-4.2-Demo/
 ESP32-S3-RLCD-4.2-Demo.zip
 

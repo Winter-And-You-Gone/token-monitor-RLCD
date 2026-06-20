@@ -390,7 +390,7 @@
       <div class="screen">
         <div class="screen-inner">
           <div class="time" id="time">--:--</div>
-          <div class="indoor" id="indoor">室内 --.-°C  --%RH</div>
+          <div class="indoor" id="indoor">温度 --.-℃  湿度 --%</div>
           <img class="pet-crab" id="petCrab" src="/sim/clawd/clawd-idle-follow.svg" alt="">
           <svg class="wx-icon" id="wxIcon" viewBox="0 0 32 32" aria-hidden="true"></svg>
           <div class="wx-temp" id="wxTemp">--°C</div>
@@ -526,7 +526,7 @@
         waiting: "等待桥接服务",
         resetUnknown: "reset --",
         resetIn: (h, m) => `重置 ${h}时${m}分`,
-        indoorUnknown: "室内 --.-C  --%",
+        indoorUnknown: "温度 --.-℃  湿度 --%",
         tokenSuffix: "token",
         cityFallback: "SHENZHEN",
         conditions: {
@@ -618,6 +618,7 @@
     const CAROUSEL_PANELS = ["claude", "deepseek", "codex", "claude", "deepseek"];
     const PET_ASSETS = new Set([
       "clawd-idle-follow.svg",
+      "clawd-idle-reading.svg",
       "clawd-idle-yawn.svg",
       "clawd-idle-doze.svg",
       "clawd-collapse-sleep.svg",
@@ -1006,7 +1007,7 @@
       const hadData = !!currentReport;
       if (!hadData) renderCarousel(null, false);
       els.wxCity.textContent = hadData ? "STALE" : "等待服务";
-      els.statusStrip.textContent = "离线 来源=bridge 更新=--:--";
+      els.statusStrip.textContent = "离线 来源 bridge  更新 --:--";
       els.apiState.innerHTML = `<strong>${tr("state")}:</strong> <span class="bad">${tr("offline")}</span><br><strong>${tr("error")}:</strong> ${err.message}`;
     }
     async function refresh() {
@@ -1024,7 +1025,7 @@
         setRows(data);
         const updated = updatedHm(data.updated_at);
         const cls = data.stale ? "warn" : "ok";
-        els.statusStrip.textContent = `${data.stale ? "离线" : "在线"} 来源=${data.source || "ccusage"} 更新=${updated}`;
+        els.statusStrip.textContent = `${data.stale ? "离线" : "在线"} 来源 ${data.source || "ccusage"}  更新 ${updated}`;
         const notes = [];
         if (data.weather_pending) notes.push(tr("weatherPending"));
         if (crossOriginToken) notes.push(tr("tokenNotSent"));

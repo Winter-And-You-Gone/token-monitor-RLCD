@@ -22,8 +22,8 @@ if ! command -v uv >/dev/null 2>&1; then
     exit 1
 fi
 
-if ! command -v npx >/dev/null 2>&1; then
-    echo "warning: 'npx' not on PATH — bridge runs but ccusage calls will fail." >&2
+if ! command -v ccusage >/dev/null 2>&1; then
+    echo "warning: 'ccusage' not on PATH — install once with: npm install -g ccusage" >&2
 fi
 
 mkdir -p "$UNIT_DIR"
