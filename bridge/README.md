@@ -140,6 +140,45 @@ Antigravity's native permission UI own approvals:
 Keep permission hooks owned by the interactive agent; this RLCD hook is
 state-only.
 
+### ZCode (via plugin `rlcd-pet-zcode/`)
+
+ZCode uses the same hook event names as Claude Code (`SessionStart`,
+`UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop`, `PermissionRequest`)
+but discovers hooks through its plugin system, not a `settings.json` hook
+config. A ready-made plugin lives at `rlcd-pet-zcode/` in the project root;
+its `hooks/run-hook.cmd` forwards each event to `pet_hook.js --agent zcode`
+(the single source of truth for the event→state map).
+
+Event → state mapping (decided by `pet_hook.js` `EVENT_TO_STATE`):
+
+| ZCode event         | pet state     |
+|---------------------|---------------|
+| `SessionStart`      | `idle`        |
+| `UserPromptSubmit`  | `thinking`    |
+| `PreToolUse`        | `working`     |
+| `PostToolUse`       | `working`     |
+| `Stop`              | `attention`   |
+| `PermissionRequest` | `notification`|
+
+To enable, register the plugin in `~/.zcode/cli/config.json`:
+
+```jsonc
+{
+  "plugins": {
+    "dirs": [
+      "X:\\ESP32-S3 RLCD\\token-monitor-RLCD\\rlcd-pet-zcode"
+    ],
+    "enabledPlugins": {
+      "rlcd-pet-zcode@inline": true
+    }
+  }
+}
+```
+
+The `@inline` suffix is mandatory — ZCode tags `plugins.dirs` entries with
+the `inline` marketplace name. Restart the ZCode session after editing.
+See `rlcd-pet-zcode/README.md` for manual smoke-test steps and internals.
+
 ## Endpoints
 
 - `GET /healthz` — liveness + cache age.

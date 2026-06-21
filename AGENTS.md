@@ -99,6 +99,7 @@ uv run pytest           :: 跑测试
 4. 不要把 `build/`、`uv.lock` 之外的生成物、`*.rlcd-bak-*` 备份文件提交进去。
 5. 烧录是物理设备操作，确认串口号（COMx）再执行，不要瞎试端口。
 6. **更新 gif 动画时**：`newgif/` 里的新 gif → 复制到 `size-56/gifs/` + 确认生成脚本优先读 `newgif/` + 重跑两个生成脚本 + 重新编译烧录。**不要动 `clawd-on-desk/` 里的 gif。**
+7. **zcode 动画触发**：已通过项目根的 `rlcd-pet-zcode/` 插件接入（不走 settings.json hooks，而是 zcode 的 `plugins.dirs` 机制）。该插件的 `hooks/run-hook.cmd` 把 zcode 生命周期事件转发给 `bridge/pet_hook.js --agent zcode`——**事件→状态映射的单一真相源是 `pet_hook.js`**，改映射改它一处即可。zcode 与 Claude/Codex 并发时会自动走 working tier 分档（`sessions>=2` → `headphones-groove`）。启用/卸载步骤见 `rlcd-pet-zcode/README.md`。
 
 ## 当工具链找不到时
 

@@ -1,0 +1,5 @@
+{
+  "name": "rlcd-pet-zcode",
+  "version": "0.1.0",
+  "description": "把 zcode 工作状态推送到 token-monitor-RLCD 摆件动画(复用 bridge/pet_hook.js)。"
+}
