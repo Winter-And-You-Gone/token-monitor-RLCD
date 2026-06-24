@@ -33,6 +33,10 @@ browser-sim-visible.png
 .tmp/
 compiler_check.txt
 
+# Catch-all for Windows reserved device name NUL created
+# by Git Bash's >nul misinterpretation as file redirect.
+nul
+
 # Vendor reference (kept locally; not committed)
 clawd-on-desk/
 ESP32-S3-RLCD-4.2-Demo/
