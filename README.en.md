@@ -53,21 +53,65 @@ IN 26.3°C  65%RH         SHENZHEN  Partly
 
 ## Architecture
 
-```
-Linux / macOS PC                          ESP32-S3-RLCD-4.2
-────────────────                          ─────────────────
-~/.claude/**/*.jsonl                      LVGL terminal UI
-        │                                         ▲
-        ▼                      LAN HTTP           │
-   bridge daemon ──── GET /api/usage (60s) ──────┘
-   (spawns ccusage)
-   :7777
-```
+	```
+	Linux / macOS PC                          ESP32-S3-RLCD-4.2
+	────────────────                          ─────────────────
+	~/.claude/**/*.jsonl                      LVGL pet animation + dashboard
+	        │                                         ▲
+	        ▼                      LAN HTTP           │
+	   bridge daemon ──── GET /api/usage (60s) ──────┘
+	   (spawns ccusage)
+	   :7777
+	```
+	
+	- **Bridge** (`bridge/`) — Python FastAPI daemon. Spawns `ccusage blocks/daily/monthly --json`, flattens into one schema, serves at `http://<host>:7777/api/usage`. Runs under systemd `--user`. Includes a web simulator at `bridge/sim.html` (served at `/sim`).
+	- **Firmware** (`firmware/`) — ESP-IDF + LVGL v9. Polls the bridge every 60 s, renders a two-column dashboard on the RLCD with a pet animation (Clawd the crab).
 
-- **Bridge** (`bridge/`) — Python FastAPI daemon. Spawns `ccusage blocks/daily/monthly --json`, flattens into one schema, serves at `http://<host>:7777/api/usage`. Runs under systemd `--user`.
-- **Firmware** (`firmware/`) — ESP-IDF + LVGL v9. Polls the bridge every 60 s, renders a two-column dashboard on the RLCD.
+	## Pet Animation System
 
----
+	The device shows a Clawd crab character below the dashboard, switching animations based on usage state:
+
+	| State | Animation | Trigger |
+	|-------|-----------|---------|
+	| idle | reading book | No activity / AI agent idle |
+	| thinking | thought bubble | AI agent is thinking |
+	| working | typing at keyboard | AI agent is generating |
+	| juggling | juggling balls | Agent parallel tasks |
+	| headphones-groove | headphones dancing | Multi-agent (sessions ≥ 2) |
+	| building | building blocks | Building/compiling in progress |
+	| sweeping | sweeping | Cleanup/organizing |
+	| sleeping | sleep / yawn / doze | Long inactivity |
+	| notification | notification bell | New notification |
+	| error | exclamation mark | Error occurred |
+	| happy / carrying / debugger / conducting / bubble | — | Various events |
+
+	Animation frame data is generated from black/white GIF sources by `scripts/gen_pet_anim.py` (56×56) and `scripts/gen_pet_big_anim.py` (184×184), compiled into the firmware as C frame tables.
+
+	### Asset Pipeline
+
+	```
+	clawd-on-desk/assets/gif/       ← Upstream color GIFs (do not touch)
+	       │
+	       ▼ (re-rendered as black/white)
+	bridge/assets/newgif/              ← B/W GIFs (scripts read these first)
+	       │
+	       ├──→ bridge/assets/clawd_rlcd/size-184/gifs/  ← Big anim preview
+	       └──→ bridge/assets/clawd_rlcd/size-56/gifs/   ← Small anim preview
+	       │
+	       ▼ (rasterize + resize, generate C tables)
+	scripts/gen_pet_anim.py → firmware/components/ui_app/pet_anim.c
+	scripts/gen_pet_big_anim.py → firmware/components/ui_app/pet_big_anim.c
+	```
+
+	### ZCode / Claude Code / Codex Integration
+
+	AI agent events are forwarded to the bridge via the `rlcd-pet-zcode/` plugin (ZCode) or `bridge/pet_hook.js` (generic). The bridge switches to the matching animation.
+
+	- **`rlcd-pet-zcode/`** — ZCode plugin, forwards lifecycle events via `hooks/run-hook.cmd` → `pet_hook.js --agent zcode`
+	- **`bridge/pet_hook.js`** — Single source of truth for event→state mapping; supports `--agent` flag to distinguish sources
+	- Multi-agent concurrency (sessions ≥ 2) switches to `headphones-groove` animation automatically
+
+	---
 
 ## Deployment
 
@@ -135,20 +179,36 @@ RLCD_HOST=0.0.0.0          # bind address (default 0.0.0.0)
 RLCD_PORT=7777              # bind port    (default 7777)
 RLCD_AUTH_TOKEN=<random>   # required when bridge is reachable beyond loopback
 RLCD_PET_MOUSE_MONITOR=1    # Windows bridge monitors mouse movement to reset/wake pet idle-sleep timing
-RLCD_PET_MOUSE_POLL_SEC=0.5 # mouse position poll interval
-RLCD_PET_MOUSE_IDLE_SEC=20   # seconds with no pet events before one idle animation
-RLCD_PET_IDLE_LOOK_SEC=14    # idle animation duration; default uses the reading animation
-RLCD_PET_MOUSE_SLEEP_SEC=300 # seconds with no pet events before yawning/dozing/sleeping; original Clawd is 60
-RLCD_PET_SLEEP_SEQUENCE=1    # set 0 to disable the automatic sleep sequence
-RLCD_WEATHER_LAT=22.5431   # your latitude  (default: Shenzhen)
-RLCD_WEATHER_LON=114.0579  # your longitude
-RLCD_WEATHER_CITY=MYTOWN   # city label on device (≤8 chars)
-# Weather source — pick one (Caiyun takes priority; omit both to use open-meteo, no key needed)
-CAIYUN_API_KEY=<token>     # recommended for China; register at https://dashboard.caiyunapp.com (defaults to once/day to conserve the 10k total quota)
-# QWEATHER_KEY=<key>       # alternative (requires adapting sources/weather.py)
-DEEPSEEK_API_KEY=sk-...    # enables DeepSeek balance display (optional)
-RLCD_WEEKLY_LIMIT_USD=100  # your weekly budget — enables the weekly % bar
-RLCD_BLOCK_LIMIT_USD=20    # your 5h window budget — enables the 5h % bar
+	RLCD_PET_MOUSE_POLL_SEC=0.5 # mouse position poll interval
+	RLCD_PET_MOUSE_IDLE_SEC=20   # seconds with no pet events before one idle animation
+	RLCD_PET_IDLE_LOOK_SEC=14    # idle animation duration; default uses the reading animation
+	RLCD_PET_MOUSE_SLEEP_SEC=300 # seconds with no pet events before yawning/dozing/sleeping; original Clawd is 60
+	RLCD_PET_SLEEP_SEQUENCE=1    # set 0 to disable the automatic sleep sequence
+	RLCD_PET_ACTIVE_TTL_SEC=90   # pet active state TTL (seconds)
+	RLCD_PET_COMPLETED_HOLD_SEC=2.0 # how long to hold the "completed" state (seconds)
+	RLCD_PET_YAWN_SEC=3.0        # yawning animation duration (seconds)
+	RLCD_PET_DEEP_SLEEP_SEC=600  # deep sleep timeout (seconds of no events)
+	RLCD_PET_COLLAPSE_SEC=0.8    # collapse-to-sleep transition duration (seconds)
+	RLCD_PET_WAKE_SEC=1.5        # wake-up transition duration (seconds)
+	RLCD_PET_IDLE_LOOK_ASSET=clawd-idle-reading.svg  # idle fidget animation asset
+	RLCD_PET_MOUSE_MIN_DELTA=1.0 # minimum mouse move distance to trigger (pixels)
+	RLCD_PET_MAX_SESSIONS=20     # max Codex/Jupyter sessions
+	RLCD_CODEX_JSONL_MONITOR=1   # enable Codex JSONL monitoring
+	RLCD_CODEX_JSONL_POLL_SEC=1.5 # Codex JSONL poll interval
+	RLCD_CODEX_JSONL_RECENT_SEC=120 # Codex recent session time window (seconds)
+	RLCD_REFRESH_SEC=45          # ccusage background refresh interval (seconds)
+	RLCD_INCLUDE_OTHERS=1        # include "others" category in dashboard
+	RLCD_ALLOW_QUERY_TOKEN=0     # set to 1 to allow ?token= in query string (default: header only)
+	RLCD_TZ=Asia/Hong_Kong       # day-rollover timezone for "today/month" usage
+	RLCD_TOKEN_LIMIT=100M        # fixed token capacity; supports 100M/1.5B/50000000
+	RLCD_BLOCK_LIMIT_TOKENS=100M # optional: 5h progress bar token limit
+	RLCD_WEEKLY_LIMIT_TOKENS=100M # optional: weekly progress bar token limit
+	RLCD_WEATHER_CMA=1           # enable CMA (China Meteorological Admin) for Chinese city names
+	RLCD_WEATHER_LAT=30.2741     # fallback latitude (default: Hangzhou)
+	RLCD_WEATHER_LON=120.1551    # fallback longitude
+	RLCD_WEATHER_CITY=Hangzhou   # city label on device (≤8 chars)
+	RLCD_WEATHER_OVERRIDE_TTL=600 # weather override data TTL (seconds)
+	RLCD_WEATHER_OVERRIDE_RETRY_SEC=30 # weather override retry interval
 ```
 
 Reload after editing:
@@ -343,14 +403,19 @@ The cleanest alternative is to set the ZeroTier network MTU to 1400 in ZeroTier 
 ```
 token-monitor-RLCD/
 ├── bridge/                    # Python FastAPI bridge daemon
-│   ├── bridge.py              # main app + background refresh cache
-│   ├── schema.py              # Pydantic response models
-│   ├── sources/
-│   │   ├── claude_local.py    # ccusage integration
-│   │   ├── claude_limits.py   # reads /run/rlcd/claude-limits.json
-│   │   ├── deepseek.py        # DeepSeek balance API
-│   │   └── weather.py         # open-meteo (no API key needed)
-│   └── pyproject.toml
+	│   ├── bridge.py              # main app + background refresh cache
+	│   ├── schema.py              # Pydantic response models
+	│   ├── pet_hook.js            # AI agent event → animation state mapper (single source of truth)
+	│   ├── sim.html               # RLCD web simulator (/sim route)
+	│   ├── sources/
+	│   │   ├── claude_local.py    # ccusage integration
+	│   │   ├── claude_limits.py   # reads /run/rlcd/claude-limits.json
+	│   │   ├── deepseek.py        # DeepSeek balance API
+	│   │   └── weather.py         # CMA first, Open-Meteo/Caiyun fallback
+	│   ├── assets/
+	│   │   ├── newgif/            # B/W GIF sources (scripts read these first)
+	│   │   └── clawd_rlcd/        # Scaled preview assets (size-56 / size-184)
+	│   └── pyproject.toml
 ├── firmware/                  # ESP-IDF v5 + LVGL v9 project
 │   ├── main/
 │   │   ├── secrets.h.example  # → copy to secrets.h (git-ignored)
@@ -361,12 +426,21 @@ token-monitor-RLCD/
 │       ├── usage_client/      # HTTP poll + cJSON parse
 │       └── ui_app/            # LVGL two-column dashboard + icons
 ├── scripts/
-│   ├── install-bridge-linux.sh          # systemd --user installer
-│   ├── rlcd-claude-limits.py            # root timer: fetch + write limits JSON
-│   ├── rlcd-claude-limits.{service,timer}
-│   └── vps-zt-mtu-fix.sh                # ZeroTier MTU/MSS fix
-└── docs/
-    └── mockup.png             # UI reference mockup
+	│   ├── gen_pet_anim.py           # 56px pet animation frame table generator
+	│   ├── gen_pet_big_anim.py       # 184px big pet animation frame table generator
+	│   ├── gen_icons.py              # Icon sprite sheet generator
+	│   ├── convert_clawd_to_rlcd_bw.py   # Color GIF → B/W GIF converter
+	│   ├── install-bridge-linux.sh          # systemd --user installer
+	│   ├── rlcd-claude-limits.py            # root timer: fetch + write limits JSON
+	│   ├── rlcd-claude-limits.{service,timer}
+	│   └── vps-zt-mtu-fix.sh                # ZeroTier MTU/MSS fix
+	├── clawd-on-desk/            # Clawd crab reference project (upstream animation source)
+	├── rlcd-pet-zcode/           # ZCode plugin: forwards AI agent lifecycle events as animation triggers
+	├── docs/
+	│   ├── mockup.png            # UI reference mockup
+	│   └── TOOLCHAIN.md          # AI agent toolchain path guide
+	├── AGENTS.md                 # AI agent project rules entry point
+	└── device_photo.png
 ```
 
 ## License

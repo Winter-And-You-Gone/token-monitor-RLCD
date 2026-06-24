@@ -47,22 +47,66 @@ IN 26.3°C  65%RH         SHENZHEN  Partly
 - USB-C 数据线（用于烧录）。
 
 ## 架构
-
-```
-Linux / macOS 主机                        ESP32-S3-RLCD-4.2
-──────────────                            ─────────────────
-~/.claude/**/*.jsonl                      LVGL 终端 UI
-        │                                         ▲
-        ▼                    局域网 HTTP           │
-   bridge 守护进程 ── GET /api/usage (60s) ───────┘
-   （调用 ccusage）
-   :7777
-```
-
-- **Bridge**（`bridge/`）— Python FastAPI 守护进程。调用 `ccusage blocks/daily/monthly --json`，汇总成统一 schema，在 `http://<主机>:7777/api/usage` 提供服务。以 systemd `--user` 方式运行。
-- **固件**（`firmware/`）— ESP-IDF + LVGL v9 项目。每 60 秒轮询 bridge，在 RLCD 上渲染双栏仪表盘。
-
----
+	
+	```
+	Linux / macOS 主机                        ESP32-S3-RLCD-4.2
+	──────────────                            ─────────────────
+	~/.claude/**/*.jsonl                      LVGL 宠物动画 + 仪表盘
+	        │                                         ▲
+	        ▼                    局域网 HTTP           │
+	   bridge 守护进程 ── GET /api/usage (60s) ───────┘
+	   （调用 ccusage）
+	   :7777
+	```
+	
+	- **Bridge**（`bridge/`）— Python FastAPI 守护进程。调用 `ccusage blocks/daily/monthly --json`，汇总成统一 schema，在 `http://<主机>:7777/api/usage` 提供服务。以 systemd `--user` 方式运行。另有 `bridge/sim.html` 网页模拟器（`/sim` 路径），可在 PC 浏览器中预览 RLCD 渲染效果。
+	- **固件**（`firmware/`）— ESP-IDF + LVGL v9 项目。每 60 秒轮询 bridge，在 RLCD 上渲染双栏仪表盘 + 宠物动画（Clawd 小螃蟹）。
+	
+	## 宠物动画系统
+	
+	设备在仪表盘下方显示一个 Clawd 小螃蟹动画角色，根据使用状态自动切换动画：
+	
+	| 状态 | 动画 | 触发条件 |
+	|------|------|----------|
+	| idle | 看书 | 无活动 / AI agent 空闲 |
+	| thinking | 思考气泡 | AI agent 正在思考 |
+	| working | 敲键盘 | AI agent 正在输出 |
+	| juggling | 抛接球 | agent 并行任务 |
+	| headphones-groove | 戴耳机律动 | 多 agent 并发（sessions ≥ 2）|
+	| building | 盖楼 | 构建/编译中 |
+	| sweeping | 打扫 | 清理/整理 |
+	| sleeping | 睡觉 / 打盹 / 打哈欠 | 长时间无活动 |
+	| notification | 通知提醒 | 有新通知 |
+	| error | 感叹号 | 出错 |
+	| happy / carrying / debugger / conducting / bubble | — | 各类事件 |
+	
+	动画帧数据由 `scripts/gen_pet_anim.py`（56×56 小型动画）和 `scripts/gen_pet_big_anim.py`（184×184 大动画）从黑白 GIF 素材生成 C 语言帧表，编译进固件。
+	
+	### 动画素材流水线
+	
+	```
+	clawd-on-desk/assets/gif/       ← 上游彩色源素材（不动）
+	       │
+	       ▼ (重新渲染为黑白稿)
+	bridge/assets/newgif/              ← 黑白 GIF（脚本优先读取）
+	       │
+	       ├──→ bridge/assets/clawd_rlcd/size-184/gifs/  ← 大动画模拟器预览
+	       └──→ bridge/assets/clawd_rlcd/size-56/gifs/   ← 小动画模拟器预览
+	       │
+	       ▼ (栅格化缩放，生成 C 帧表)
+	scripts/gen_pet_anim.py → firmware/components/ui_app/pet_anim.c
+	scripts/gen_pet_big_anim.py → firmware/components/ui_app/pet_big_anim.c
+	```
+	
+	### ZCode / Claude Code / Codex 集成
+	
+	AI agent 的事件通过 `rlcd-pet-zcode/` 插件（ZCode 端）或 `bridge/pet_hook.js`（通用端）转发给 bridge，bridge 按事件类型切换到对应动画。
+	
+	- **`rlcd-pet-zcode/`** — ZCode 插件，通过 `hooks/run-hook.cmd` 将 ZCode 生命周期事件转发给 `pet_hook.js --agent zcode`
+	- **`bridge/pet_hook.js`** — 事件→状态映射的单一真相源，支持 `--agent` 参数区分来源
+	- 多 agent 并发（sessions ≥ 2）自动走 `headphones-groove` 动画
+	
+	---
 
 ## 部署步骤
 
@@ -146,6 +190,22 @@ RLCD_PET_MOUSE_IDLE_SEC=20   # 小螃蟹空闲多久后播放一次 idle 小动�
 RLCD_PET_IDLE_LOOK_SEC=14    # idle 小动作持续时间；默认使用 reading 动画
 RLCD_PET_MOUSE_SLEEP_SEC=300 # 无新事件多久后进入打哈欠/打盹/睡觉；原版 Clawd 是 60 秒
 RLCD_PET_SLEEP_SEQUENCE=1    # 设为 0 可关闭自动睡眠序列
+RLCD_PET_ACTIVE_TTL_SEC=90   # pet 活跃状态超时（秒）
+RLCD_PET_COMPLETED_HOLD_SEC=2.0 # completed 状态的保持时间（秒）
+RLCD_PET_YAWN_SEC=3.0        # 打哈欠时长（秒）
+RLCD_PET_DEEP_SLEEP_SEC=600  # 深睡超时（无事件进入深睡）
+RLCD_PET_COLLAPSE_SEC=0.8    # 倒地入睡过渡时长（秒）
+RLCD_PET_WAKE_SEC=1.5        # 醒来过渡时长（秒）
+RLCD_PET_IDLE_LOOK_ASSET=clawd-idle-reading.svg  # idle 小动作动画素材
+RLCD_PET_MOUSE_MIN_DELTA=1.0 # 鼠标移动最小触发距离（像素）
+RLCD_PET_MAX_SESSIONS=20     # Codex/Jupyter 最大 session 数
+RLCD_CODEX_JSONL_MONITOR=1   # 启用 Codex JSONL 监控
+RLCD_CODEX_JSONL_POLL_SEC=1.5 # Codex JSONL 轮询间隔
+RLCD_CODEX_JSONL_RECENT_SEC=120 # Codex 最近 session 时间窗口
+RLCD_REFRESH_SEC=45          # ccusage 后台刷新间隔（秒）
+RLCD_INCLUDE_OTHERS=1        # 仪表盘包含 "others" 分类
+RLCD_WEATHER_OVERRIDE_TTL=600 # 天气覆盖数据 TTL（秒）
+RLCD_WEATHER_OVERRIDE_RETRY_SEC=30 # 天气覆盖重试间隔
 RLCD_WEATHER_CMA=1         # 城市名优先使用中国气象局 CMA 数据；设为 0 可关闭
 RLCD_WEATHER_LAT=30.2741   # 坐标兜底纬度（默认杭州）
 RLCD_WEATHER_LON=120.1551  # 坐标兜底经度
@@ -340,14 +400,19 @@ sudo systemctl enable --now rlcd-zt-fix.service   # 开机自动生效
 ```
 token-monitor-RLCD/
 ├── bridge/                    # Python FastAPI bridge 守护进程
-│   ├── bridge.py              # 主程序 + 后台刷新缓存
-│   ├── schema.py              # Pydantic 响应模型
-│   ├── sources/
-│   │   ├── claude_local.py    # ccusage 集成
-│   │   ├── claude_limits.py   # 读取 /run/rlcd/claude-limits.json
-│   │   ├── deepseek.py        # DeepSeek 余额 API
-│   │   └── weather.py         # CMA 优先，Open-Meteo/Caiyun 坐标兜底
-│   └── pyproject.toml
+	│   ├── bridge.py              # 主程序 + 后台刷新缓存
+	│   ├── schema.py              # Pydantic 响应模型
+	│   ├── pet_hook.js            # AI agent 事件→动画状态映射（单一真相源）
+	│   ├── sim.html               # RLCD 网页模拟器（/sim 路径）
+	│   ├── sources/
+	│   │   ├── claude_local.py    # ccusage 集成
+	│   │   ├── claude_limits.py   # 读取 /run/rlcd/claude-limits.json
+	│   │   ├── deepseek.py        # DeepSeek 余额 API
+	│   │   └── weather.py         # CMA 优先，Open-Meteo/Caiyun 坐标兜底
+	│   ├── assets/
+	│   │   ├── newgif/            # 黑白 GIF 素材（生成脚本优先读取）
+	│   │   └── clawd_rlcd/        # 缩放版预览素材（size-56 / size-184）
+	│   └── pyproject.toml
 ├── firmware/                  # ESP-IDF v5 + LVGL v9 项目
 │   ├── main/
 │   │   ├── secrets.h.example  # → 复制为 secrets.h（已 gitignore）
@@ -358,12 +423,21 @@ token-monitor-RLCD/
 │       ├── usage_client/      # HTTP 轮询 + cJSON 解析
 │       └── ui_app/            # LVGL 双栏仪表盘 + 图标
 ├── scripts/
-│   ├── install-bridge-linux.sh           # systemd --user 安装脚本
-│   ├── rlcd-claude-limits.py             # root 定时器：获取并写入限额 JSON
-│   ├── rlcd-claude-limits.{service,timer}
-│   └── vps-zt-mtu-fix.sh                 # ZeroTier MTU/MSS 修复
-└── docs/
-    └── mockup.png             # UI 参考原型图
+	│   ├── gen_pet_anim.py       # 从 GIF 生成 56px 宠物动画帧表
+	│   ├── gen_pet_big_anim.py   # 从 GIF 生成 184px 大宠物动画帧表
+	│   ├── gen_icons.py          # 图标精灵表生成
+	│   ├── convert_clawd_to_rlcd_bw.py  # 彩色 GIF → 黑白 GIF 转换
+	│   ├── install-bridge-linux.sh           # systemd --user 安装脚本
+	│   ├── rlcd-claude-limits.py             # root 定时器：获取并写入限额 JSON
+	│   ├── rlcd-claude-limits.{service,timer}
+	│   └── vps-zt-mtu-fix.sh                 # ZeroTier MTU/MSS 修复
+	├── clawd-on-desk/            # Clawd 螃蟹角色上游参考项目（动画素材源）
+	├── rlcd-pet-zcode/           # ZCode 插件：将 AI agent 生命周期事件转发为动画触发
+	├── docs/
+	│   ├── mockup.png            # UI 参考原型图
+	│   └── TOOLCHAIN.md          # AI agent 工具链路径指引
+	├── AGENTS.md                 # AI agent 项目规则入口
+	└── device_photo.png
 ```
 
 ## 许可证
