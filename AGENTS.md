@@ -78,6 +78,7 @@ uv run pytest           :: 跑测试
 | `clawd-on-desk/assets/gif/` | 302×300 | **彩色**（上游源） | 上游参考项目源，**不能动**；生成脚本仅在 newgif 没有同名 gif 时回退读它 |
 | `bridge/assets/newgif/` | 302×300 | **黑白** | 重新渲染的黑白稿，**生成脚本优先读它**做固件帧数据（按需，只放有变化的） |
 | `bridge/assets/clawd_rlcd/size-56/gifs/` | 56×56 | 黑白 | 缩放到 56px 的展示版，sim.html 模拟器/预览用 |
+| `bridge/assets/clawd_rlcd/size-184/gifs/` | 184×184 | 黑白 | 缩放到 184px 的展示版，大动画页（按 BOOT 键切换）预览用 |
 
 更新动画的完整流程：
 
@@ -98,7 +99,7 @@ uv run pytest           :: 跑测试
 3. 路径里有空格（`X:\ESP32-S3 RLCD\...`），shell 命令务必加引号。
 4. 不要把 `build/`、`uv.lock` 之外的生成物、`*.rlcd-bak-*` 备份文件提交进去。
 5. 烧录是物理设备操作，确认串口号（COMx）再执行，不要瞎试端口。
-6. **更新 gif 动画时**：`newgif/` 里的新 gif → 复制到 `size-56/gifs/` + 确认生成脚本优先读 `newgif/` + 重跑两个生成脚本 + 重新编译烧录。**不要动 `clawd-on-desk/` 里的 gif。**
+6. **更新 gif 动画时**：`newgif/` 里的新 gif → 复制到 `size-56/gifs/` **和** `size-184/gifs/`（两个目录都要同步，上次就漏了 size-184） + 确认生成脚本优先读 `newgif/` + 重跑两个生成脚本 + 重新编译烧录。**不要动 `clawd-on-desk/` 里的 gif。**
 7. **zcode 动画触发**：已通过项目根的 `rlcd-pet-zcode/` 插件接入（不走 settings.json hooks，而是 zcode 的 `plugins.dirs` 机制）。该插件的 `hooks/run-hook.cmd` 把 zcode 生命周期事件转发给 `bridge/pet_hook.js --agent zcode`——**事件→状态映射的单一真相源是 `pet_hook.js`**，改映射改它一处即可。zcode 与 Claude/Codex 并发时会自动走 working tier 分档（`sessions>=2` → `headphones-groove`）。启用/卸载步骤见 `rlcd-pet-zcode/README.md`。
 8. **不要在 cmd.exe 命令里用 `>nul` / `2>nul`**——Git Bash 把它当成文件重定向，会在当前目录创建名为 `nul` 的文件，污染工作区。替代方法：用 Python 捕获输出来抑制，或用 `>NUL`（全大写）让 cmd 自己处理。
 
