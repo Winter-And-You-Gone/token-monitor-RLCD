@@ -206,25 +206,10 @@ CODEX_JSONL_POLL_SEC = _float_env("RLCD_CODEX_JSONL_POLL_SEC", 1.5)
 CODEX_JSONL_RECENT_SEC = _float_env("RLCD_CODEX_JSONL_RECENT_SEC", 120.0)
 CODEX_SESSION_DIR = Path(os.environ.get("RLCD_CODEX_SESSION_DIR", "") or (Path.home() / ".codex" / "sessions"))
 CODEX_JSONL_EVENT_STATES = {
-    # Start of a session / new task
-    "event_msg:task_started": "thinking",
-    "event_msg:user_message": "thinking",
-    # Codex executing tools / generating responses
-    "response_item:function_call": "working",
-    "response_item:function_call_output": "working",
-    "response_item:custom_tool_call": "working",
-    "response_item:custom_tool_call_output": "working",
-    "response_item:reasoning": "thinking",
-    "event_msg:agent_message": "working",
-    # Context compaction events
+    # Only events that hooks can't capture (Codex-internal, auto-triggered).
+    # All user/tool lifecycle events come through pet_hook.js via hooks.json.
     "event_msg:context_compacted": "sweeping",
     "compacted": "sweeping",
-    # Task completion
-    "event_msg:task_complete": "attention",
-    # MCP tool activity
-    "event_msg:mcp_tool_call_end": "working",
-    # Patch apply tracking
-    "event_msg:patch_apply_end": "working",
 }
 
 _cache_lock = threading.Lock()
