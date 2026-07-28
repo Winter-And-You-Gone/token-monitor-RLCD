@@ -38,6 +38,28 @@ IN 26.3°C  65%RH         SHENZHEN  Partly
  合计  18.2M   $214│ 今日token 2.4M
 ```
 
+## 页面
+
+按 BOOT 键循环切换三个页面：
+
+### Token 仪表盘（默认页）
+
+双栏显示 Claude / DeepSeek / Codex 的今日、本月、合计用量与费用，顶部天气、时间、室内温湿度，底部小宠物动画。
+
+### 大宠物动画
+
+184×184 大尺寸宠物动画，展示当前 AI agent 的工作状态。
+
+### Codex 雷达
+
+3×3 网格展示 [codexradar.com](https://codexradar.com) 的智力效率基准数据：
+
+- 行：sol（太阳）/ terra（地球）/ luna（月亮）三个模型
+- 列：ULTRA / MAX / XHIGH 三档努力程度
+- 每格显示 IQ 值、价格、耗时、通过率（/112）及趋势 sparkline
+- 每 10 分钟自动刷新，顶部显示下次刷新倒计时
+
+
 ## 硬件
 
 - [Waveshare ESP32-S3-RLCD-4.2](https://www.waveshare.com/wiki/ESP32-S3-RLCD-4.2) — 4.2 英寸反射式 LCD（类纸面），ESP32-S3，Wi-Fi，RTC，温湿度，SD，音频。

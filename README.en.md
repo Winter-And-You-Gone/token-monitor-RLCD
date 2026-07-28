@@ -42,6 +42,28 @@ IN 26.3°C  65%RH         SHENZHEN  Partly
  total  18.2M   $214│ today    2.4M tok
 ```
 
+## Pages
+
+Cycle through three pages with the BOOT button:
+
+### Token dashboard (default)
+
+Two-column display of Claude / DeepSeek / Codex today, month, and lifetime usage and cost. Top bar shows weather, time, and indoor temp/humidity. Bottom shows a small pet animation.
+
+### Big pet animation
+
+184×184 large pet animation showing the current AI agent's working state.
+
+### Codex Radar
+
+3×3 grid showing intelligence-efficiency benchmark data from [codexradar.com](https://codexradar.com):
+
+- Rows: sol (sun) / terra (earth) / luna (moon) models
+- Columns: ULTRA / MAX / XHIGH effort levels
+- Each cell shows IQ, price, time, pass rate (/112), and a trend sparkline
+- Auto-refreshes every 10 minutes; top bar shows countdown to next refresh
+
+
 ## Hardware
 
 - [Waveshare ESP32-S3-RLCD-4.2](https://www.waveshare.com/wiki/ESP32-S3-RLCD-4.2) — 4.2" reflective LCD (paper-like), ESP32-S3, WiFi, RTC, temp/humidity, SD, audio.
