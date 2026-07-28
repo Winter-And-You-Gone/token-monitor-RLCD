@@ -15,6 +15,7 @@
 #include "esp_log.h"
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 LV_FONT_DECLARE(font_amt14);   // DejaVuSans-Bold 14 (ascii + °)
 LV_FONT_DECLARE(font_bal28);   // DejaVuSans-Bold 28 (digits . ¥)
@@ -36,17 +37,11 @@ LV_FONT_DECLARE(font_cn14);    // compact local Chinese UI font
 #define PET_DEFAULT_FRAME_MS 70
 #define PET_MAX_CATCHUP_FRAMES 3
 #define PET_BIG_PAGE_H 300
-#define SHOW_CLAUDE_LIMITS 0
 #define FONT_CN14 (&font_cn14)
 
 static const char *TAG = "ui_app";
 
 typedef struct {
-    lv_obj_t *bar_5h;
-    lv_obj_t *bar_7d;
-    lv_obj_t *lbl_5h_pct;
-    lv_obj_t *lbl_7d_pct;
-    lv_obj_t *lbl_reset;
     lv_obj_t *model[3];
     lv_obj_t *model_tok[3];
     lv_obj_t *tok[3];
@@ -71,9 +66,34 @@ typedef enum {
     AGENT_CODEX,
 } agent_kind_t;
 
+typedef enum {
+    PAGE_TOKEN = 0,
+    PAGE_PET,
+    PAGE_RADAR,
+    PAGE_COUNT,
+} page_kind_t;
+
+typedef struct {
+    lv_obj_t *cell;
+    lv_obj_t *iq;
+    lv_obj_t *price;
+    lv_obj_t *time;
+    lv_obj_t *pass;
+    lv_obj_t *sparkline;
+} radar_cell_t;
+
 static lv_obj_t *lbl_time, *lbl_indoor, *img_pet, *img_pet_eyes, *img_wx, *lbl_wx_temp, *lbl_wx_city, *lbl_status;
 static lv_obj_t *lbl_battery_title, *lbl_battery_pct, *battery_body, *battery_fill, *battery_tip;
 static lv_obj_t *pet_big_page, *img_pet_big, *img_pet_big_eyes;
+static lv_obj_t *img_radar_pet = NULL;
+static lv_obj_t *radar_page, *lbl_radar_updated;
+static radar_cell_t radar_cells[3][3];
+static page_kind_t g_current_page = PAGE_TOKEN;
+static lv_obj_t *g_overlays[PAGE_COUNT];
+static uint32_t radar_last_update_tick = 0;
+static lv_timer_t *radar_timer = NULL;
+static lv_point_precise_t radar_spark_pts[3][3][RADAR_MAX_HISTORY];
+#define RADAR_REFRESH_SEC 600
 static claude_panel_t   claude_panels[MAX_AGENT_PANELS];
 static deepseek_panel_t deepseek_panels[MAX_AGENT_PANELS];
 static codex_panel_t    codex_panels[MAX_AGENT_PANELS];
@@ -119,15 +139,6 @@ static void fmt_cost(char *o, size_t n, double c)
     else if (c < 1000) snprintf(o, n, "$%.0f", c);
     else               snprintf(o, n, "$%.1fk", c / 1000.0);
 }
-
-#if SHOW_CLAUDE_LIMITS
-static int pct_clamp(int v)
-{
-    if (v < 0) return 0;
-    if (v > 100) return 100;
-    return v;
-}
-#endif
 
 static lv_obj_t *mkbare(lv_obj_t *p, int x, int y, int w, int h)
 {
@@ -189,25 +200,6 @@ static lv_obj_t *mkbattery_body(lv_obj_t *p, int x, int y, int w, int h)
     return o;
 }
 
-#if SHOW_CLAUDE_LIMITS
-static lv_obj_t *mkbar(lv_obj_t *p, int x, int y, int w)
-{
-    lv_obj_t *b = lv_bar_create(p);
-    lv_obj_set_pos(b, x, y);
-    lv_obj_set_size(b, w, 13);
-    lv_bar_set_range(b, 0, 100);
-    lv_obj_set_style_radius(b, 6, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(b, WHITE, LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(b, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_border_color(b, INK, LV_PART_MAIN);
-    lv_obj_set_style_border_width(b, 2, LV_PART_MAIN);
-    lv_obj_set_style_radius(b, 6, LV_PART_INDICATOR);
-    lv_obj_set_style_bg_color(b, INK, LV_PART_INDICATOR);
-    lv_bar_set_value(b, 0, LV_ANIM_OFF);
-    return b;
-}
-#endif
-
 static lv_obj_t *mkicon(lv_obj_t *p, int x, int y, const lv_image_dsc_t *src)
 {
     lv_obj_t *im = lv_image_create(p);
@@ -234,6 +226,7 @@ static void pet_show_frame(void)
     const lv_image_dsc_t *body = pet_seq->frames[frame];
     if (body != pet_last_body_frame) {
         lv_image_set_src(img_pet, body);
+        if (img_radar_pet) lv_image_set_src(img_radar_pet, body);
         pet_last_body_frame = body;
     }
     if (img_pet_big && pet_big_seq && pet_big_seq->frames && pet_big_seq->frame_count > 0) {
@@ -335,23 +328,10 @@ static void mk_claude_panel(lv_obj_t *slide, int x)
 
     mkicon(slide, x + 10, 6, &icon_claudecode);
     mklabel(slide, x + 50, 10, &lv_font_montserrat_20, "CLAUDE");
-#if SHOW_CLAUDE_LIMITS
-    mklabel(slide, x + 12, 46, &lv_font_montserrat_14, "5h");
-    p->bar_5h = mkbar(slide, x + 40, 46, 96);
-    p->lbl_5h_pct = mkalign(slide, x + 140, 44, 52, LV_TEXT_ALIGN_RIGHT, &font_amt14, "--%");
-    mklabel(slide, x + 12, 70, &lv_font_montserrat_14, "7d");
-    p->bar_7d = mkbar(slide, x + 40, 70, 96);
-    p->lbl_7d_pct = mkalign(slide, x + 140, 68, 52, LV_TEXT_ALIGN_RIGHT, &font_amt14, "--%");
-    p->lbl_reset = mklabel(slide, x + 12, 94, &lv_font_montserrat_14, "reset --");
-    mkdiv(slide, x + 12, 118, 178, 1);
-    const int row_y0 = 126;
-    const int row_gap = 28;
-#else
     mk_model_rows(slide, x, p->model, p->model_tok);
     mkdiv(slide, x + 12, 118, 178, 1);
     const int row_y0 = 126;
     const int row_gap = 28;
-#endif
 
     const char *rows[3] = {"今日", "本月", "合计"};
     for (int i = 0; i < 3; ++i) {
@@ -473,6 +453,94 @@ static void mk_pet_big_page(lv_obj_t *screen)
     lv_obj_add_flag(pet_big_page, LV_OBJ_FLAG_HIDDEN);
 }
 
+static lv_obj_t *mk_radar_cell(lv_obj_t *p, int x, int y, int w, int h, radar_cell_t *cell)
+{
+    lv_obj_t *c = mkbare(p, x, y, w, h);
+    lv_obj_set_style_bg_color(c, WHITE, 0);
+    lv_obj_set_style_bg_opa(c, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(c, INK, 0);
+    lv_obj_set_style_border_width(c, 1, 0);
+    lv_obj_set_style_radius(c, 0, 0);
+
+    cell->cell = c;
+    cell->iq     = mklabel(c, 4, 2, &font_bal28, "0");
+    cell->price  = mkalign(c, 4, 26, 50, LV_TEXT_ALIGN_LEFT, &font_amt14, "");
+    cell->time   = mkalign(c, 54, 26, w - 58, LV_TEXT_ALIGN_RIGHT, &font_amt14, "");
+    cell->pass   = mkalign(c, 4, 40, w - 8, LV_TEXT_ALIGN_LEFT, FONT_CN14, "");
+    cell->sparkline = lv_line_create(c);
+    lv_obj_set_pos(cell->sparkline, 4, 52);
+    lv_obj_set_style_line_color(cell->sparkline, INK, 0);
+    lv_obj_set_style_line_width(cell->sparkline, 1, 0);
+    lv_obj_add_flag(cell->sparkline, LV_OBJ_FLAG_HIDDEN);
+    return c;
+}
+
+static void mk_radar_page(lv_obj_t *screen)
+{
+    radar_page = mkbare(screen, 0, 0, VIEW_W, 300);
+    lv_obj_set_style_bg_color(radar_page, WHITE, 0);
+    lv_obj_set_style_bg_opa(radar_page, LV_OPA_COVER, 0);
+
+    mklabel(radar_page, 8, 2, &lv_font_montserrat_20, "Codex");
+    mklabel(radar_page, 76, 6, FONT_CN14, " 雷达");
+    lbl_radar_updated = mkalign(radar_page, 120, 8, 272, LV_TEXT_ALIGN_RIGHT, FONT_CN14, "");
+    mkdiv(radar_page, 8, 26, 384, 2);
+
+    static const char *efforts[3] = {"ULTRA", "MAX", "XHIGH"};
+    static const int col_x[3] = {60, 172, 284};
+    static const int col_w = 108;
+    for (int i = 0; i < 3; ++i)
+        mkalign(radar_page, col_x[i], 30, col_w, LV_TEXT_ALIGN_CENTER, &font_amt14, efforts[i]);
+
+    static const lv_image_dsc_t *model_icons[3] = {&icon_sun, &icon_earth, &icon_moon};
+    static const int row_y[3] = {48, 124, 200};
+    static const int row_h = 72;
+
+    for (int m = 0; m < 3; ++m) {
+        mkicon(radar_page, 4, row_y[m] + 12, model_icons[m]);
+        for (int e = 0; e < 3; ++e)
+            mk_radar_cell(radar_page, col_x[e], row_y[m], col_w, row_h, &radar_cells[m][e]);
+    }
+
+    mkdiv(radar_page, 8, 276, 384, 1);
+    mkalign(radar_page, 8, 280, 384, LV_TEXT_ALIGN_CENTER, FONT_CN14,
+            "数据源:codexradar.com - 112 题基准测试 - 每10分钟刷新");
+
+    lv_obj_add_flag(radar_page, LV_OBJ_FLAG_HIDDEN);
+
+    /* Luna Ultra cell: replace N/A labels with a mini pet animation */
+    {
+        radar_cell_t *c = &radar_cells[2][0];
+        lv_obj_add_flag(c->iq, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(c->price, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(c->time, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(c->pass, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(c->sparkline, LV_OBJ_FLAG_HIDDEN);
+        img_radar_pet = mkpet_sized(c->cell, (col_w - 56) / 2, (row_h - 56) / 2, 56, 56);
+    }
+}
+
+static void radar_timer_cb(lv_timer_t *timer)
+{
+    (void) timer;
+    if (!radar_page || lv_obj_has_flag(radar_page, LV_OBJ_FLAG_HIDDEN)) return;
+    if (!lbl_radar_updated || radar_last_update_tick == 0) return;
+
+    time_t now = time(NULL);
+    struct tm *t = localtime(&now);
+
+    uint32_t elapsed = (lv_tick_get() - radar_last_update_tick) / 1000;
+    int remaining = RADAR_REFRESH_SEC - (int)elapsed;
+    if (remaining < 0) remaining = 0;
+    int min = remaining / 60;
+    int sec = remaining % 60;
+
+    char buf[56];
+    snprintf(buf, sizeof(buf), "实时 更新于 %02d/%02d %02d:%02d  %d:%02d 后刷新",
+             t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min, min, sec);
+    lv_label_set_text(lbl_radar_updated, buf);
+}
+
 void ui_app_init(void)
 {
     lv_obj_t *s = lv_screen_active();
@@ -518,6 +586,12 @@ void ui_app_init(void)
     set_carousel_splits(false);
 
     mk_pet_big_page(s);
+    mk_radar_page(s);
+
+    g_overlays[PAGE_TOKEN] = NULL;
+    g_overlays[PAGE_PET]   = pet_big_page;
+    g_overlays[PAGE_RADAR] = radar_page;
+    g_current_page = PAGE_TOKEN;
 
     if (carousel_timer) lv_timer_del(carousel_timer);
     carousel_timer = lv_timer_create(carousel_timer_cb, CAROUSEL_TIMER_MS, NULL);
@@ -527,21 +601,32 @@ void ui_app_init(void)
     pet_set_sequence(ui_pet_anim_idle(), ui_pet_big_anim_idle());
     if (pet_timer) lv_timer_del(pet_timer);
     pet_timer = lv_timer_create(pet_timer_cb, PET_TIMER_MS, NULL);
+    if (radar_timer) lv_timer_del(radar_timer);
+    radar_timer = lv_timer_create(radar_timer_cb, 1000, NULL);
     have_data = false;
     logged_first_report = false;
-    ESP_LOGI(TAG, "UI build marker UI v13, model_col=112, token_col=60, pet_eye_knockout=1, carousel=30fps-fast, pet_art=crab-focus, battery=1, pet_big_page=1, pet_big_size=184");
+    ESP_LOGI(TAG, "UI build marker UI v14, model_col=112, token_col=60, pet_eye_knockout=1, carousel=30fps-fast, pet_art=crab-focus, battery=1, pet_big_page=1, pet_big_size=184, radar_page=1, pages=3");
 }
 
 static const char *weather_cn(const char *condition)
 {
     if (!condition || !condition[0]) return "";
+    if (strstr(condition, "Storm"))  return "暴雨";
+    if (strstr(condition, "Heavy") && strstr(condition, "Snow")) return "大雪";
+    if (strstr(condition, "Heavy")) return "大雨";
+    if (strstr(condition, "Drizzle")) return "小雨";
+    if (strstr(condition, "Rain"))  return "雨";
+    if (strstr(condition, "Snow"))  return "雪";
+    if (strstr(condition, "Fog"))   return "雾";
+    if (strstr(condition, "Haze"))  return "霾";
+    if (strstr(condition, "Dust"))  return "尘";
+    if (strstr(condition, "Sand"))  return "沙";
+    if (strstr(condition, "Overcast")) return "阴";
+    if (strstr(condition, "Cloud")) return "多云";
+    if (strstr(condition, "Wind"))  return "风";
     if (strstr(condition, "Clear") || strstr(condition, "Sunny")) return "晴";
     if (strstr(condition, "Partly")) return "多云";
-    if (strstr(condition, "Cloud") || strstr(condition, "Overcast")) return "多云";
-    if (strstr(condition, "Rain") || strstr(condition, "Drizzle") || strstr(condition, "Storm")) return "雨";
-    if (strstr(condition, "Snow")) return "雪";
-    if (strstr(condition, "Fog") || strstr(condition, "Haze")) return "雾";
-    return condition;
+    return "多云";
 }
 
 static const lv_image_dsc_t *wx_icon(const char *key)
@@ -557,36 +642,6 @@ static const lv_image_dsc_t *wx_icon(const char *key)
 static void update_claude_panel(const claude_panel_t *p, const usage_report_t *r)
 {
     char tk[16], ct[16];
-#if SHOW_CLAUDE_LIMITS
-    char b[40];
-    int p5 = r->limits.util_5h_x100;
-    int p7 = r->limits.util_7d_x100;
-
-    if (p5 >= 0) {
-        int clamped = pct_clamp(p5);
-        lv_bar_set_value(p->bar_5h, clamped, LV_ANIM_OFF);
-        snprintf(b, sizeof(b), "%d%%", clamped);
-        lv_label_set_text(p->lbl_5h_pct, b);
-    } else {
-        lv_bar_set_value(p->bar_5h, 0, LV_ANIM_OFF);
-        lv_label_set_text(p->lbl_5h_pct, "--%");
-    }
-
-    if (p7 >= 0) {
-        int clamped = pct_clamp(p7);
-        lv_bar_set_value(p->bar_7d, clamped, LV_ANIM_OFF);
-        snprintf(b, sizeof(b), "%d%%", clamped);
-        lv_label_set_text(p->lbl_7d_pct, b);
-    } else {
-        lv_bar_set_value(p->bar_7d, 0, LV_ANIM_OFF);
-        lv_label_set_text(p->lbl_7d_pct, "--%");
-    }
-
-    int m = r->limits.reset_5h_min;
-    if (m >= 0) snprintf(b, sizeof(b), "reset in %dh%02dm", m / 60, m % 60);
-    else        snprintf(b, sizeof(b), "reset --");
-    lv_label_set_text(p->lbl_reset, b);
-#else
     for (int i = 0; i < 3; ++i) {
         if (i < r->model_count) {
             fmt_tok(tk, sizeof(tk), r->models[i].tokens);
@@ -598,7 +653,6 @@ static void update_claude_panel(const claude_panel_t *p, const usage_report_t *r
             lv_label_set_text(p->model_tok[i], "-");
         }
     }
-#endif
 
     const usage_bucket_t *cb[3] = { &r->today, &r->month, &r->lifetime };
     for (int i = 0; i < 3; ++i) {
@@ -674,6 +728,96 @@ static void update_codex_panel(const codex_panel_t *p, const usage_report_t *r)
     }
 }
 
+static const usage_radar_point_t *find_radar_point(const usage_radar_t *r, const char *model, const char *effort)
+{
+    for (int i = 0; i < r->point_count; ++i) {
+        if (r->points[i].valid &&
+            strcmp(r->points[i].model, model) == 0 &&
+            strcmp(r->points[i].effort, effort) == 0)
+            return &r->points[i];
+    }
+    return NULL;
+}
+
+static const usage_radar_trend_t *find_radar_trend(const usage_radar_t *r, const char *model, const char *effort)
+{
+    for (int i = 0; i < r->trend_count; ++i) {
+        if (strcmp(r->trends[i].model, model) == 0 &&
+            strcmp(r->trends[i].effort, effort) == 0)
+            return &r->trends[i];
+    }
+    return NULL;
+}
+
+static void update_radar_sparkline(radar_cell_t *c, int m, int e, const usage_radar_t *r)
+{
+    static const char *models[3]  = {"sol", "terra", "luna"};
+    static const char *efforts[3] = {"ultra", "max", "xhigh"};
+    const usage_radar_trend_t *t = find_radar_trend(r, models[m], efforts[e]);
+    if (!t || t->iq_count < 2) {
+        if (c->sparkline) lv_obj_add_flag(c->sparkline, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+    float min_iq = t->iqs[0], max_iq = t->iqs[0];
+    for (int i = 1; i < t->iq_count; ++i) {
+        if (t->iqs[i] < min_iq) min_iq = t->iqs[i];
+        if (t->iqs[i] > max_iq) max_iq = t->iqs[i];
+    }
+    float range = max_iq - min_iq;
+    if (range < 0.1f) range = 1.0f;
+
+    const int sw = 100, sh = 16;
+    lv_point_precise_t *pts = radar_spark_pts[m][e];
+    for (int i = 0; i < t->iq_count; ++i) {
+        pts[i].x = (t->iq_count > 1) ? (i * sw / (t->iq_count - 1)) : 0;
+        pts[i].y = (int32_t)(sh - (t->iqs[i] - min_iq) / range * sh);
+    }
+    if (c->sparkline) {
+        lv_line_set_points(c->sparkline, pts, t->iq_count);
+        lv_obj_clear_flag(c->sparkline, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+static void update_radar_cell(radar_cell_t *c, const usage_radar_point_t *pt)
+{
+    if (!pt || !pt->valid) {
+        lv_obj_set_style_bg_color(c->cell, WHITE, 0);
+        lv_obj_set_style_border_width(c->cell, 1, 0);
+        lv_label_set_text(c->iq, "0");
+        lv_label_set_text(c->price, "");
+        lv_label_set_text(c->time, "");
+        lv_label_set_text(c->pass, "N/A");
+        return;
+    }
+
+    char b[20];
+    snprintf(b, sizeof(b), "%.1f", pt->iq);
+    lv_label_set_text(c->iq, b);
+
+    snprintf(b, sizeof(b), "$%.1f", pt->price);
+    lv_label_set_text(c->price, b);
+
+    snprintf(b, sizeof(b), "%dmin", (int)pt->minutes);
+    lv_label_set_text(c->time, b);
+
+    snprintf(b, sizeof(b), "%d/%d", (int)pt->passed, (int)pt->tasks);
+    lv_label_set_text(c->pass, b);
+
+    lv_obj_set_style_bg_color(c->cell, WHITE, 0);
+    lv_obj_set_style_border_width(c->cell, 1, 0);
+}
+
+static void update_radar_page(const usage_radar_t *r)
+{
+    static const char *models[3]  = {"sol", "terra", "luna"};
+    static const char *efforts[3] = {"ultra", "max", "xhigh"};
+    for (int m = 0; m < 3; ++m)
+        for (int e = 0; e < 3; ++e) {
+            update_radar_cell(&radar_cells[m][e], find_radar_point(r, models[m], efforts[e]));
+            update_radar_sparkline(&radar_cells[m][e], m, e, r);
+        }
+}
+
 void ui_app_update(const usage_report_t *r)
 {
     if (!r) return;
@@ -722,6 +866,9 @@ void ui_app_update(const usage_report_t *r)
                  r->stale ? "离线" : "在线", r->source[0] ? r->source : "ccusage", updated);
         lv_label_set_text(lbl_status, last_status_line);
     }
+
+    update_radar_page(&r->radar);
+    if (r->radar.valid) radar_last_update_tick = lv_tick_get();
 }
 
 
@@ -739,14 +886,16 @@ void ui_app_update_pet(const usage_pet_t *pet)
 
 void ui_app_toggle_pet_page(void)
 {
-    if (!pet_big_page) return;
-    if (lv_obj_has_flag(pet_big_page, LV_OBJ_FLAG_HIDDEN)) {
-        lv_obj_clear_flag(pet_big_page, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_move_foreground(pet_big_page);
-        pet_show_frame();
-    } else {
-        lv_obj_add_flag(pet_big_page, LV_OBJ_FLAG_HIDDEN);
+    page_kind_t next = (page_kind_t)((g_current_page + 1) % PAGE_COUNT);
+    for (int i = 1; i < PAGE_COUNT; ++i) {
+        if (g_overlays[i]) lv_obj_add_flag(g_overlays[i], LV_OBJ_FLAG_HIDDEN);
     }
+    if (next != PAGE_TOKEN && g_overlays[next]) {
+        lv_obj_clear_flag(g_overlays[next], LV_OBJ_FLAG_HIDDEN);
+        lv_obj_move_foreground(g_overlays[next]);
+        if (next == PAGE_PET) pet_show_frame();
+    }
+    g_current_page = next;
 }
 
 void ui_app_set_env(float temp_c, float humidity, bool ok)
@@ -810,13 +959,7 @@ void ui_app_set_time(const char *hm)
 
 static void set_all_claude_reset(const char *text)
 {
-#if SHOW_CLAUDE_LIMITS
-    for (int i = 0; i < claude_panel_count; ++i) {
-        lv_label_set_text(claude_panels[i].lbl_reset, text);
-    }
-#else
     (void)text;
-#endif
 }
 
 void ui_app_mark_stale(void)

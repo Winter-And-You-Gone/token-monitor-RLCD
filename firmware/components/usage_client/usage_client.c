@@ -47,16 +47,6 @@ static int32_t pct_x100(const cJSON *v)
     return cJSON_IsNumber(v) ? (int32_t)(v->valuedouble * 10000.0) : -1;
 }
 
-static bool is_ascii_label(const char *s)
-{
-    if (!s || !s[0]) return false;
-    while (*s) {
-        if ((unsigned char)*s >= 0x80) return false;
-        ++s;
-    }
-    return true;
-}
-
 static void parse_bucket(const cJSON *o, usage_bucket_t *out)
 {
     if (!cJSON_IsObject(o)) {
@@ -112,7 +102,6 @@ static void parse_models(const cJSON *bm, usage_model_t *models, int *model_coun
 esp_err_t usage_client_fetch(const char *url, const char *token, usage_report_t *out)
 {
     memset(out, 0, sizeof(*out));
-    out->active_block.percent_used_x100 = -1;
 
     char *buf = (char *) malloc(MAX_RESP_BYTES);
     if (!buf) return ESP_ERR_NO_MEM;
@@ -170,42 +159,11 @@ esp_err_t usage_client_fetch(const char *url, const char *token, usage_report_t 
         return ESP_ERR_INVALID_RESPONSE;
     }
 
-    const cJSON *ab = cJSON_GetObjectItemCaseSensitive(claude, "active_block");
-    if (cJSON_IsObject(ab)) {
-        out->active_block.valid = true;
-        const cJSON *t = cJSON_GetObjectItemCaseSensitive(ab, "tokens_used");
-        const cJSON *c = cJSON_GetObjectItemCaseSensitive(ab, "cost_usd");
-        const cJSON *m = cJSON_GetObjectItemCaseSensitive(ab, "minutes_remaining");
-        const cJSON *p = cJSON_GetObjectItemCaseSensitive(ab, "percent_used");
-        out->active_block.tokens_used       = cJSON_IsNumber(t) ? (int64_t) t->valuedouble : 0;
-        out->active_block.cost_usd          = cJSON_IsNumber(c) ? c->valuedouble : 0.0;
-        out->active_block.minutes_remaining = cJSON_IsNumber(m) ? (int32_t) m->valueint : 0;
-        out->active_block.percent_used_x100 = pct_x100(p);
-    }
-
-    parse_bucket(cJSON_GetObjectItemCaseSensitive(claude, "weekly"),   &out->weekly);
     parse_bucket(cJSON_GetObjectItemCaseSensitive(claude, "today"),    &out->today);
     parse_bucket(cJSON_GetObjectItemCaseSensitive(claude, "month"),    &out->month);
     parse_bucket(cJSON_GetObjectItemCaseSensitive(claude, "lifetime"), &out->lifetime);
 
     parse_models(cJSON_GetObjectItemCaseSensitive(claude, "by_model"), out->models, &out->model_count);
-
-    // claude.limits — real 5h/7d utilization (0..1 -> x100)
-    out->limits.util_5h_x100 = -1;
-    out->limits.util_7d_x100 = -1;
-    out->limits.reset_5h_min = out->active_block.valid ? out->active_block.minutes_remaining : -1;
-    strncpy(out->limits.status, "n/a", sizeof(out->limits.status) - 1);
-    const cJSON *lim = cJSON_GetObjectItemCaseSensitive(claude, "limits");
-    if (cJSON_IsObject(lim)) {
-        const cJSON *u5 = cJSON_GetObjectItemCaseSensitive(lim, "util_5h");
-        const cJSON *u7 = cJSON_GetObjectItemCaseSensitive(lim, "util_7d");
-        const cJSON *st = cJSON_GetObjectItemCaseSensitive(lim, "status");
-        const cJSON *rm = cJSON_GetObjectItemCaseSensitive(lim, "reset_5h_min");
-        if (cJSON_IsNumber(u5)) out->limits.util_5h_x100 = (int32_t)(u5->valuedouble * 100.0 + 0.5);
-        if (cJSON_IsNumber(u7)) out->limits.util_7d_x100 = (int32_t)(u7->valuedouble * 100.0 + 0.5);
-        if (cJSON_IsNumber(rm)) out->limits.reset_5h_min = (int32_t) rm->valueint;  // real unified reset
-        if (cJSON_IsString(st)) strncpy(out->limits.status, st->valuestring, sizeof(out->limits.status) - 1);
-    }
 
     // weather (top-level)
     const cJSON *w = cJSON_GetObjectItemCaseSensitive(root, "weather");
@@ -218,12 +176,10 @@ esp_err_t usage_client_fetch(const char *url, const char *token, usage_report_t 
         out->weather.temp_c = cJSON_IsNumber(t) ? t->valuedouble : 0.0;
         if (cJSON_IsString(cd)) strncpy(out->weather.condition, cd->valuestring, sizeof(out->weather.condition) - 1);
         if (cJSON_IsString(ic)) strncpy(out->weather.icon,      ic->valuestring, sizeof(out->weather.icon) - 1);
-        if (cJSON_IsString(cy) && cy->valuestring[0] && is_ascii_label(cy->valuestring)) {
+        if (cJSON_IsString(cy) && cy->valuestring[0]) {
             strncpy(out->weather.city, cy->valuestring, sizeof(out->weather.city) - 1);
-        } else if (cJSON_IsString(cy_ascii) && is_ascii_label(cy_ascii->valuestring)) {
+        } else if (cJSON_IsString(cy_ascii) && cy_ascii->valuestring[0]) {
             strncpy(out->weather.city, cy_ascii->valuestring, sizeof(out->weather.city) - 1);
-        } else if (cJSON_IsString(cy) && cy->valuestring[0]) {
-            strncpy(out->weather.city, cy->valuestring, sizeof(out->weather.city) - 1);
         }
         out->weather.valid = cJSON_IsNumber(t);
     }
@@ -266,6 +222,63 @@ esp_err_t usage_client_fetch(const char *url, const char *token, usage_report_t 
             out->other[i].valid = cJSON_IsString(ag);
         }
         out->other_count = n;
+    }
+
+    // codexradar (top-level)
+    const cJSON *cr = cJSON_GetObjectItemCaseSensitive(root, "codexradar");
+    if (cJSON_IsObject(cr)) {
+        const cJSON *avail = cJSON_GetObjectItemCaseSensitive(cr, "available");
+        const cJSON *pts = cJSON_GetObjectItemCaseSensitive(cr, "points");
+        if (cJSON_IsArray(pts)) {
+            int n = cJSON_GetArraySize(pts);
+            if (n > RADAR_MAX_POINTS) n = RADAR_MAX_POINTS;
+            for (int i = 0; i < n; ++i) {
+                const cJSON *p = cJSON_GetArrayItem(pts, i);
+                if (!cJSON_IsObject(p)) continue;
+                const cJSON *model  = cJSON_GetObjectItemCaseSensitive(p, "model");
+                const cJSON *effort = cJSON_GetObjectItemCaseSensitive(p, "effort");
+                const cJSON *iq     = cJSON_GetObjectItemCaseSensitive(p, "iq");
+                const cJSON *price  = cJSON_GetObjectItemCaseSensitive(p, "price");
+                const cJSON *mins   = cJSON_GetObjectItemCaseSensitive(p, "minutes");
+                const cJSON *passed = cJSON_GetObjectItemCaseSensitive(p, "passed");
+                const cJSON *tasks  = cJSON_GetObjectItemCaseSensitive(p, "tasks");
+                if (cJSON_IsString(model))  strncpy(out->radar.points[i].model,  model->valuestring,  sizeof(out->radar.points[i].model) - 1);
+                if (cJSON_IsString(effort)) strncpy(out->radar.points[i].effort, effort->valuestring, sizeof(out->radar.points[i].effort) - 1);
+                out->radar.points[i].iq      = cJSON_IsNumber(iq)    ? iq->valuedouble    : 0.0;
+                out->radar.points[i].price   = cJSON_IsNumber(price) ? price->valuedouble : 0.0;
+                out->radar.points[i].minutes = cJSON_IsNumber(mins)  ? mins->valuedouble  : 0.0;
+                out->radar.points[i].passed  = cJSON_IsNumber(passed)? (int32_t)passed->valueint : 0;
+                out->radar.points[i].tasks   = cJSON_IsNumber(tasks) ? (int32_t)tasks->valueint  : 112;
+                out->radar.points[i].valid   = cJSON_IsNumber(iq);
+            }
+            out->radar.point_count = n;
+            out->radar.valid = cJSON_IsTrue(avail) || n > 0;
+        }
+
+        const cJSON *trends = cJSON_GetObjectItemCaseSensitive(cr, "trends");
+        if (cJSON_IsArray(trends)) {
+            int tn = cJSON_GetArraySize(trends);
+            if (tn > RADAR_MAX_POINTS) tn = RADAR_MAX_POINTS;
+            for (int i = 0; i < tn; ++i) {
+                const cJSON *t = cJSON_GetArrayItem(trends, i);
+                if (!cJSON_IsObject(t)) continue;
+                const cJSON *tm = cJSON_GetObjectItemCaseSensitive(t, "model");
+                const cJSON *te = cJSON_GetObjectItemCaseSensitive(t, "effort");
+                const cJSON *iqs = cJSON_GetObjectItemCaseSensitive(t, "iqs");
+                if (cJSON_IsString(tm)) strncpy(out->radar.trends[i].model, tm->valuestring, sizeof(out->radar.trends[i].model) - 1);
+                if (cJSON_IsString(te)) strncpy(out->radar.trends[i].effort, te->valuestring, sizeof(out->radar.trends[i].effort) - 1);
+                if (cJSON_IsArray(iqs)) {
+                    int ic = cJSON_GetArraySize(iqs);
+                    if (ic > RADAR_MAX_HISTORY) ic = RADAR_MAX_HISTORY;
+                    for (int j = 0; j < ic; ++j) {
+                        const cJSON *iq = cJSON_GetArrayItem(iqs, j);
+                        out->radar.trends[i].iqs[j] = cJSON_IsNumber(iq) ? (float)iq->valuedouble : 0.0f;
+                    }
+                    out->radar.trends[i].iq_count = ic;
+                }
+            }
+            out->radar.trend_count = tn;
+        }
     }
 
     cJSON_Delete(root);

@@ -10,3 +10,6 @@ extern const lv_image_dsc_t icon_wx_cloud;
 extern const lv_image_dsc_t icon_wx_rain;
 extern const lv_image_dsc_t icon_wx_snow;
 extern const lv_image_dsc_t icon_wx_fog;
+extern const lv_image_dsc_t icon_sun;
+extern const lv_image_dsc_t icon_moon;
+extern const lv_image_dsc_t icon_earth;
