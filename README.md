@@ -46,9 +46,9 @@ IN 26.3°C  65%RH         SHENZHEN  Partly
 
 双栏显示 Claude / DeepSeek / Codex 的今日、本月、合计用量与费用，顶部天气、时间、室内温湿度，底部小宠物动画。
 
-### 大宠物动画
+### Clawd 宠物动画
 
-184×184 大尺寸宠物动画，展示当前 AI agent 的工作状态。
+184×184 大尺寸 Clawd 螃蟹动画，展示当前 AI agent 的工作状态。角色衍生于 [clawd-on-desk](https://github.com/CEJXXX/clawd-on-desk) 项目，重新渲染为黑白稿以适配反射式 LCD。
 
 ### Codex 雷达
 

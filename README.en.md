@@ -50,9 +50,9 @@ Cycle through three pages with the BOOT button:
 
 Two-column display of Claude / DeepSeek / Codex today, month, and lifetime usage and cost. Top bar shows weather, time, and indoor temp/humidity. Bottom shows a small pet animation.
 
-### Big pet animation
+### Clawd pet animation
 
-184×184 large pet animation showing the current AI agent's working state.
+184×184 large Clawd the crab animation showing the current AI agent's working state. The character is derived from the [clawd-on-desk](https://github.com/CEJXXX/clawd-on-desk) project, re-rendered in black and white for the reflective LCD.
 
 ### Codex Radar
 
