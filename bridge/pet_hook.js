@@ -69,7 +69,6 @@ const EVENT_TO_STATE = {
   SubagentStop: "working",
   PreCompact: "sweeping",
   PostCompact: "attention",
-  "event_msg:context_compacted": "sweeping",
   Notification: "notification",
   PermissionRequest: "notification",
   Elicitation: "notification",
@@ -89,7 +88,13 @@ const CODEX_EVENT_TO_STATE = {
   PermissionRequest: "notification",
   PostToolUse: "working",
   Stop: "codex-turn-end",
+  Notification: "notification",
+  SubagentStart: "juggling",
+  SubagentStop: "working",
   "event_msg:context_compacted": "sweeping",
+  "event_msg:turn_aborted": "idle",
+  "event_msg:task_complete": "codex-turn-end",
+  "session_meta": "idle",
 };
 
 const ANTIGRAVITY_EVENT_TO_STATE = {
@@ -97,7 +102,6 @@ const ANTIGRAVITY_EVENT_TO_STATE = {
   PreToolUse: "working",
   PostToolUse: "working",
   PostInvocation: "idle",
-  AfterAgent: "idle",
   Stop: "attention",
 };
 
@@ -220,6 +224,7 @@ function resolveAgent(payload) {
 function resolveState(event, requestedState, payload, agent) {
   if (VALID_STATES.has(requestedState) || SPECIAL_STATES.has(requestedState)) return requestedState;
   if (isCodexAgent(agent)) {
+    if (event === "Stop" && payload && payload.stop_hook_active === true) return "idle";
     if (event === "PostToolUse" && hasPayloadError(payload)) return "error";
     if (event === "Stop" && hasStopError(payload)) return "error";
     return CODEX_EVENT_TO_STATE[event] || EVENT_TO_STATE[event] || "idle";
@@ -326,6 +331,14 @@ function postJson(url, body, token) {
     sessions: Number(argValue("--sessions") || payload.sessions || payload.session_count || 0),
     subagents: Number(argValue("--subagents") || payload.subagents || payload.subagent_count || 0),
   };
+  if (payload && typeof payload === "object") {
+    if (payload.stop_hook_active === true) body.stop_hook_active = true;
+    if (typeof payload.terminationReason === "string") body.terminationReason = payload.terminationReason;
+    if (payload.error !== undefined && payload.error !== null && payload.error !== false && payload.error !== "") {
+      body.error = payload.error;
+    }
+    if (typeof payload.headless === "boolean") body.headless = payload.headless;
+  }
 
   const base = process.env.RLCD_BRIDGE_URL || "http://127.0.0.1:7777";
   const url = new URL("/api/pet/state", base).toString();

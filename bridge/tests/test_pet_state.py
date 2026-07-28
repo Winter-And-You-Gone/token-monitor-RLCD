@@ -150,9 +150,11 @@ class PetStateMappingTests(unittest.TestCase):
 
         self.assertEqual(session_id, "codex:123e4567-e89b-12d3-a456-426614174000")
 
-    def test_working_assets_do_not_switch_to_non_working_variants(self) -> None:
+    def test_working_assets_follow_session_tiers(self) -> None:
         self.assertEqual(bridge._pet_asset_for("working", sessions=1), "clawd-working-typing.svg")
-        self.assertEqual(bridge._pet_asset_for("working", sessions=4), "clawd-working-typing.svg")
+        self.assertEqual(bridge._pet_asset_for("working", sessions=2), "clawd-headphones-groove.svg")
+        self.assertEqual(bridge._pet_asset_for("working", sessions=3), "clawd-working-building.svg")
+        self.assertEqual(bridge._pet_asset_for("working", sessions=4), "clawd-working-building.svg")
         self.assertEqual(bridge._pet_asset_for("juggling", subagents=1), "clawd-working-juggling.svg")
 
 
@@ -332,7 +334,7 @@ class PetRuntimeTests(unittest.TestCase):
         state = bridge._apply_pet_event({"event": "SubagentStop", "agent": "claude", "session_id": "s1"})
         self.assertEqual(state.state, "working")
 
-    def test_codex_stop_idles_even_after_tool_turn(self) -> None:
+    def test_codex_stop_resolves_based_on_tool_use(self) -> None:
         bridge._apply_pet_event({"event": "UserPromptSubmit", "agent": "codex", "session_id": "s1"})
 
         state = bridge._apply_pet_event({"event": "Stop", "agent": "codex", "session_id": "s1"})
@@ -342,7 +344,49 @@ class PetRuntimeTests(unittest.TestCase):
         bridge._apply_pet_event({"event": "PreToolUse", "agent": "codex", "session_id": "s2"})
 
         state = bridge._apply_pet_event({"event": "Stop", "agent": "codex", "session_id": "s2"})
-        self.assertEqual(state.state, "idle")
+        self.assertEqual(state.state, "attention")
+
+    def test_codex_stop_with_stop_hook_active_preserves_state(self) -> None:
+        bridge._apply_pet_event({"event": "PreToolUse", "agent": "codex", "session_id": "s1"})
+
+        state = bridge._apply_pet_event({
+            "event": "Stop",
+            "agent": "codex",
+            "session_id": "s1",
+            "stop_hook_active": True,
+        })
+        self.assertEqual(state.state, "working")
+
+    def test_codex_jsonl_turn_aborted_resets_to_idle(self) -> None:
+        events: list[dict[str, object]] = []
+        entry = bridge._CodexLogEntry(offset=0, session_id="session-1")
+        line = json.dumps({"type": "event_msg", "payload": {"type": "turn_aborted"}})
+
+        applied = bridge._codex_process_jsonl_line(line, entry, apply_event=events.append)
+
+        self.assertTrue(applied)
+        self.assertEqual(events[0]["state"], "idle")
+        self.assertEqual(events[0]["event"], "event_msg:turn_aborted")
+
+    def test_codex_jsonl_task_started_is_thinking_not_working(self) -> None:
+        events: list[dict[str, object]] = []
+        entry = bridge._CodexLogEntry(offset=0, session_id="session-1")
+        line = json.dumps({"type": "event_msg", "payload": {"type": "task_started"}})
+
+        applied = bridge._codex_process_jsonl_line(line, entry, apply_event=events.append)
+
+        self.assertTrue(applied)
+        self.assertEqual(events[0]["state"], "thinking")
+
+    def test_codex_jsonl_web_search_call_is_working(self) -> None:
+        events: list[dict[str, object]] = []
+        entry = bridge._CodexLogEntry(offset=0, session_id="session-1")
+        line = json.dumps({"type": "response_item", "payload": {"type": "web_search_call"}})
+
+        applied = bridge._codex_process_jsonl_line(line, entry, apply_event=events.append)
+
+        self.assertTrue(applied)
+        self.assertEqual(events[0]["state"], "working")
 
     def test_attention_does_not_override_remaining_work(self) -> None:
         bridge._apply_pet_event({"event": "PreToolUse", "agent": "codex", "session_id": "s1"})

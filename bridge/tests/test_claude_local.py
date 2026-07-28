@@ -18,7 +18,6 @@ from sources.claude_local import (  # noqa: E402
     _ccusage_args,
     _entries_for_period,
     _model_tokens_today,
-    _parse_token_limit,
     _resolve_ccusage_command,
     _run,
     _subprocess_env_without_proxy,
@@ -32,17 +31,6 @@ class ClaudeLocalTests(unittest.TestCase):
         with claude_local._ccusage_lock:
             claude_local._ccusage_cache.clear()
             claude_local._ccusage_inflight.clear()
-
-    def test_parse_token_limit_suffixes(self) -> None:
-        self.assertEqual(_parse_token_limit("100M"), 100_000_000)
-        self.assertEqual(_parse_token_limit("1.5B"), 1_500_000_000)
-        self.assertEqual(_parse_token_limit("250k"), 250_000)
-        self.assertEqual(_parse_token_limit("500000"), 500_000)
-
-    def test_parse_token_limit_disabled_or_invalid(self) -> None:
-        self.assertIsNone(_parse_token_limit("0"))
-        self.assertIsNone(_parse_token_limit("off"))
-        self.assertIsNone(_parse_token_limit("not-a-limit"))
 
     def test_sum_period_accepts_agent_cost_usd(self) -> None:
         tokens, cost = _sum_period([

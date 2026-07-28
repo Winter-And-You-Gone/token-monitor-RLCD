@@ -116,7 +116,9 @@ class BridgeConfigTests(unittest.TestCase):
 
     def test_usage_payload_includes_current_pet_state(self) -> None:
         old_cache = bridge._cache.copy()
+        old_auth = bridge.AUTH_TOKEN
         try:
+            bridge.AUTH_TOKEN = None
             bridge._reset_pet_state_for_tests()
             bridge._cache["report"] = bridge._mock_report()
             bridge._cache["ts"] = time.time()
@@ -140,6 +142,7 @@ class BridgeConfigTests(unittest.TestCase):
             self.assertEqual(payload["pet"]["state"], "working")
             self.assertEqual(payload["pet"]["agent"], "codex")
         finally:
+            bridge.AUTH_TOKEN = old_auth
             bridge._cache.clear()
             bridge._cache.update(old_cache)
             bridge._reset_pet_state_for_tests()
@@ -205,7 +208,9 @@ class BridgeConfigTests(unittest.TestCase):
             bridge.fetch_other_agents = old_fetch_other
 
     def test_mock_usage_payload_includes_current_pet_state(self) -> None:
+        old_auth = bridge.AUTH_TOKEN
         try:
+            bridge.AUTH_TOKEN = None
             bridge._reset_pet_state_for_tests()
             bridge._apply_pet_event({
                 "event": "PreToolUse",
@@ -225,6 +230,7 @@ class BridgeConfigTests(unittest.TestCase):
             self.assertEqual(payload["pet"]["state"], "working")
             self.assertEqual(payload["pet"]["agent"], "claude-code")
         finally:
+            bridge.AUTH_TOKEN = old_auth
             bridge._reset_pet_state_for_tests()
 
 

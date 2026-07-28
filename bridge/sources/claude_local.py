@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from schema import ActiveBlock, Bucket, ClaudeUsage, ModelBreakdown, OtherAgentUsage
+from schema import Bucket, ClaudeUsage, ModelBreakdown, OtherAgentUsage
 
 
 LOG = logging.getLogger(__name__)
@@ -42,12 +42,10 @@ def _int_env(name: str, default: int, minimum: int = 1) -> int:
     return max(minimum, value)
 
 
-# 5h window with claude only; daily/monthly include all agents by default
+# Claude daily/monthly stats come from ccusage; other agents are queried separately.
 DEFAULT_TIMEOUT = _int_env("CCUSAGE_TIMEOUT_SEC", 20, minimum=1)
 OTHER_TIMEOUT = _int_env("CCUSAGE_OTHER_TIMEOUT_SEC", 20, minimum=1)
-BLOCKS_CACHE_TTL_SEC = _int_env("CCUSAGE_BLOCK_CACHE_TTL_SEC", 60, minimum=1)
 PERIOD_CACHE_TTL_SEC = _int_env("CCUSAGE_PERIOD_CACHE_TTL_SEC", 300, minimum=1)
-DEFAULT_CACHE_TTL_SEC = _int_env("CCUSAGE_CACHE_TTL_SEC", 60, minimum=1)
 CCUSAGE_OFFLINE = os.environ.get("CCUSAGE_OFFLINE", "1").strip().lower() not in {
     "0",
     "false",
@@ -59,11 +57,6 @@ OTHER_AGENTS = tuple(
     for agent in os.environ.get("RLCD_OTHER_AGENTS", "codex").split(",")
     if agent.strip()
 )
-
-# Optional limit overrides (Anthropic doesn't publish plan limits programmatically)
-WEEKLY_LIMIT_USD = float(os.environ.get("RLCD_WEEKLY_LIMIT_USD", "0")) or None
-BLOCK_LIMIT_USD = float(os.environ.get("RLCD_BLOCK_LIMIT_USD", "0")) or None
-DEFAULT_TOKEN_LIMIT = os.environ.get("RLCD_TOKEN_LIMIT", "100M")
 
 
 def _configured_timezone_name() -> str:
@@ -80,28 +73,6 @@ def _configured_timezone():
 
 LOCAL_TZ_NAME = _configured_timezone_name()
 LOCAL_TZ = _configured_timezone()
-
-
-def _parse_token_limit(value: str | None) -> int | None:
-    if value is None:
-        return None
-    text = value.strip().replace("_", "")
-    if not text or text.lower() in ("0", "none", "off", "false"):
-        return None
-    suffix = text[-1].lower()
-    mult = 1
-    if suffix in ("k", "m", "b"):
-        text = text[:-1]
-        mult = {"k": 1_000, "m": 1_000_000, "b": 1_000_000_000}[suffix]
-    try:
-        limit = int(float(text) * mult)
-    except ValueError:
-        return None
-    return limit if limit > 0 else None
-
-
-BLOCK_LIMIT_TOKENS = _parse_token_limit(os.environ.get("RLCD_BLOCK_LIMIT_TOKENS", DEFAULT_TOKEN_LIMIT))
-WEEKLY_LIMIT_TOKENS = _parse_token_limit(os.environ.get("RLCD_WEEKLY_LIMIT_TOKENS", DEFAULT_TOKEN_LIMIT))
 
 
 def _ccusage_args(args: list[str]) -> list[str]:
@@ -198,11 +169,9 @@ def _subprocess_env_without_proxy() -> dict[str, str]:
 
 
 def _ccusage_cache_ttl(args: list[str]) -> int:
-    if args[:3] == ["blocks", "--active", "--json"]:
-        return BLOCKS_CACHE_TTL_SEC
     if any(part in {"daily", "monthly"} for part in args):
         return PERIOD_CACHE_TTL_SEC
-    return DEFAULT_CACHE_TTL_SEC
+    return DEFAULT_TIMEOUT
 
 
 def _ccusage_cache_key(args: list[str]) -> tuple[str, ...]:
@@ -346,36 +315,6 @@ def _bucket(tokens: int, cost: float, limit_usd: float | None = None,
     )
 
 
-def _parse_active_block(blocks_json: dict[str, Any]) -> ActiveBlock | None:
-    for blk in blocks_json.get("blocks", []):
-        if blk.get("isActive") and not blk.get("isGap"):
-            start = datetime.fromisoformat(blk["startTime"].replace("Z", "+00:00"))
-            end = datetime.fromisoformat(blk["endTime"].replace("Z", "+00:00"))
-            now = datetime.now(timezone.utc)
-            minutes_left = max(0, int((end - now).total_seconds() // 60))
-            tokens = int(blk.get("totalTokens", 0))
-            cost = float(blk.get("costUSD", 0.0))
-            projection = blk.get("projection") or {}
-            if BLOCK_LIMIT_TOKENS:
-                pct = tokens / BLOCK_LIMIT_TOKENS
-            elif BLOCK_LIMIT_USD:
-                pct = cost / BLOCK_LIMIT_USD
-            else:
-                pct = None
-            return ActiveBlock(
-                started_at=start,
-                ends_at=end,
-                tokens_used=tokens,
-                cost_usd=round(cost, 4),
-                tokens_limit=BLOCK_LIMIT_TOKENS,
-                percent_used=round(pct, 4) if pct is not None else None,
-                minutes_remaining=minutes_left,
-                projection_tokens=projection.get("totalTokens"),
-                projection_cost_usd=projection.get("totalCost"),
-            )
-    return None
-
-
 def _period_of(e: dict[str, Any]) -> str:
     # Field name differs by command:
     #   unified `ccusage daily`         -> period (YYYY-MM-DD)
@@ -476,12 +415,11 @@ def _model_tokens_today(
 
 
 def fetch_claude() -> tuple[ClaudeUsage, int]:
-    """Build a ClaudeUsage by spawning ccusage three times.
+    """Build a ClaudeUsage by spawning ccusage.
 
     Returns (claude_usage, deepseek_today_tokens) — the second value is the
     DeepSeek-model token count for today, extracted from the same ccusage data.
     """
-    blocks_json = _run(["blocks", "--active", "--json"])
     daily_full = _run(["claude", "daily", "--json"])
     monthly_full = _run(["claude", "monthly", "--json"])
 
@@ -495,23 +433,16 @@ def fetch_claude() -> tuple[ClaudeUsage, int]:
     today_entries = _entries_for_period(daily_entries, today_str, today_fallback)
     today_tok, today_cost = _sum_period(today_entries)
 
-    # Weekly: last 7 calendar days
-    week_cutoff = (now_local - timedelta(days=6)).strftime("%Y-%m-%d")
-    week_entries = [e for e in daily_entries if _period_of(e) >= week_cutoff]
-    week_tok, week_cost = _sum_period(week_entries)
-
     # Month: current month
     month_str = now_local.strftime("%Y-%m")
     month_fallback = _utc_period_fallback(now_local, "%Y-%m")
     month_entries = _entries_for_period(monthly_entries, month_str, month_fallback)
     month_tok, month_cost = _sum_period(month_entries)
 
-    # Lifetime: sum of all daily entries (could also use totals field)
+    # Lifetime: sum of all daily entries
     life_tok, life_cost = _sum_period(daily_entries)
 
     usage = ClaudeUsage(
-        active_block=_parse_active_block(blocks_json),
-        weekly=_bucket(week_tok, week_cost, WEEKLY_LIMIT_USD, WEEKLY_LIMIT_TOKENS),
         today=_bucket(today_tok, today_cost),
         month=_bucket(month_tok, month_cost),
         lifetime=_bucket(life_tok, life_cost),

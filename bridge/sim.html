@@ -437,10 +437,6 @@
         </div>
       </div>
       <div class="control-row">
-        <label for="tokenLimit" data-i18n="tokenLimit">Token 上限</label>
-        <input id="tokenLimit" value="100M" spellcheck="false">
-      </div>
-      <div class="control-row">
         <label for="token" data-i18n="accessToken">访问 Token</label>
         <input id="token" type="password" autocomplete="off" spellcheck="false">
       </div>
@@ -489,7 +485,6 @@
         sec5: "5 秒",
         sec15: "15 秒",
         sec60: "60 秒",
-        tokenLimit: "Token 上限",
         accessToken: "访问 Token",
         weatherCity: "天气城市",
         weatherCityPlaceholder: "例如 Hong Kong",
@@ -500,8 +495,6 @@
         locate: "本机定位",
         autoRefresh: "自动刷新",
         refreshNow: "立即刷新",
-        window5h: "5时",
-        window7d: "7天",
         today: "今日",
         month: "本月",
         total: "合计",
@@ -524,8 +517,6 @@
         locationDenied: "定位失败",
         currentLocation: "当前位置",
         waiting: "等待桥接服务",
-        resetUnknown: "reset --",
-        resetIn: (h, m) => `重置 ${h}时${m}分`,
         indoorUnknown: "温度 --.-℃  湿度 --%",
         tokenSuffix: "token",
         cityFallback: "SHENZHEN",
@@ -550,7 +541,6 @@
         sec5: "5 sec",
         sec15: "15 sec",
         sec60: "60 sec",
-        tokenLimit: "Token limit",
         accessToken: "X-RLCD-Token",
         weatherCity: "Weather city",
         weatherCityPlaceholder: "e.g. Hong Kong",
@@ -561,8 +551,6 @@
         locate: "Use device location",
         autoRefresh: "auto refresh",
         refreshNow: "Refresh now",
-        window5h: "5h",
-        window7d: "7d",
         today: "today",
         month: "month",
         total: "total",
@@ -585,8 +573,6 @@
         locationDenied: "location failed",
         currentLocation: "current location",
         waiting: "waiting for bridge",
-        resetUnknown: "reset --",
-        resetIn: (h, m) => `reset in ${h}h${m}m`,
         indoorUnknown: "IN --.-°C  --%RH",
         tokenSuffix: "tok",
         cityFallback: "SHENZHEN",
@@ -598,7 +584,7 @@
       time: $("time"), indoor: $("indoor"), wxIcon: $("wxIcon"), wxTemp: $("wxTemp"),
       wxCity: $("wxCity"), petCrab: $("petCrab"), carouselTrack: $("carouselTrack"), statusStrip: $("statusStrip"),
       apiState: $("apiState"), baseUrl: $("baseUrl"), mode: $("mode"), interval: $("interval"),
-      tokenLimit: $("tokenLimit"), token: $("token"), auto: $("auto"), refresh: $("refresh"),
+      token: $("token"), auto: $("auto"), refresh: $("refresh"),
       language: $("language"), weatherCity: $("weatherCity"), weatherLat: $("weatherLat"),
       weatherLon: $("weatherLon"), locate: $("locate")
     };
@@ -877,7 +863,7 @@
           if (p.mode === "mock") p.mode = "live";
           p.interval = "60";
         }
-        for (const key of ["baseUrl", "mode", "interval", "tokenLimit", "auto", "language", "weatherCity", "weatherLat", "weatherLon"]) {
+        for (const key of ["baseUrl", "mode", "interval", "auto", "language", "weatherCity", "weatherLat", "weatherLon"]) {
           if (key in p && els[key]) {
             if (els[key].type === "checkbox") els[key].checked = !!p[key];
             else els[key].value = p[key];
@@ -889,19 +875,10 @@
       localStorage.setItem("rlcd-sim", JSON.stringify({
         version: PREF_VERSION,
         baseUrl: els.baseUrl.value, mode: els.mode.value, interval: els.interval.value,
-        tokenLimit: els.tokenLimit.value, auto: els.auto.checked,
+        auto: els.auto.checked,
         language: els.language.value, weatherCity: els.weatherCity.value,
         weatherLat: els.weatherLat.value, weatherLon: els.weatherLon.value
       }));
-    }
-    function parseTokenLimit(value) {
-      const raw = String(value || "").trim().replaceAll("_", "");
-      if (!raw || /^(0|none|off|false)$/i.test(raw)) return null;
-      const match = raw.match(/^([0-9]+(?:\.[0-9]+)?)([kKmMbB]?)$/);
-      if (!match) return null;
-      const mult = match[2].toLowerCase() === "k" ? 1e3 : match[2].toLowerCase() === "m" ? 1e6 : match[2].toLowerCase() === "b" ? 1e9 : 1;
-      const n = Number(match[1]) * mult;
-      return Number.isFinite(n) && n > 0 ? n : null;
     }
     function fmtTok(v) {
       const n = Number(v || 0);
@@ -920,10 +897,6 @@
     function fmtMoney(v, currency = "CNY") {
       const symbol = currency === "CNY" ? "¥" : currency + " ";
       return symbol + Number(v || 0).toFixed(2);
-    }
-    function resetText(mins) {
-      if (!Number.isFinite(mins) || mins < 0) return tr("resetUnknown");
-      return tr("resetIn")(Math.floor(mins / 60), String(Math.floor(mins % 60)).padStart(2, "0"));
     }
     function drawIcon(kind) {
       const stroke = "currentColor";
@@ -1066,7 +1039,7 @@
     petTimer = setInterval(refreshPet, 2000);
     updateClock();
     setInterval(updateClock, 1000);
-    for (const el of [els.baseUrl, els.mode, els.interval, els.tokenLimit, els.token, els.auto, els.weatherCity, els.weatherLat, els.weatherLon]) {
+    for (const el of [els.baseUrl, els.mode, els.interval, els.token, els.auto, els.weatherCity, els.weatherLat, els.weatherLon]) {
       el.addEventListener("change", () => { savePrefs(); schedule(); refresh(); });
       el.addEventListener("input", savePrefs);
     }

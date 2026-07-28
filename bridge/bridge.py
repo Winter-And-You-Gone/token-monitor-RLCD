@@ -15,6 +15,7 @@ import json
 import re
 import threading
 import time
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -50,21 +51,22 @@ def _load_dotenv(path: Path) -> None:
 _load_dotenv(Path(__file__).with_name(".env"))
 
 from schema import (
-    ActiveBlock,
     Bucket,
-    ClaudeLimits,
     ClaudeUsage,
+    CodexRadar,
     DeepSeek,
     ModelBreakdown,
     OtherAgentUsage,
     PetState,
+    RadarPoint,
+    RadarTrend,
     UsageReport,
     Weather,
 )
 from sources.claude_local import fetch_claude, fetch_other_agents
-from sources.claude_limits import fetch_limits
 from sources.weather import fetch_weather
 from sources.deepseek import fetch_deepseek
+from sources.codexradar import fetch_codexradar
 
 
 def _float_env(name: str, default: float) -> float:
@@ -103,7 +105,14 @@ INCLUDE_OTHERS = os.environ.get("RLCD_INCLUDE_OTHERS", "1") != "0"
 AUTH_TOKEN = os.environ.get("RLCD_AUTH_TOKEN") or None  # blank/unset = no auth
 ALLOW_QUERY_TOKEN = os.environ.get("RLCD_ALLOW_QUERY_TOKEN", "0") == "1"
 
-app = FastAPI(title="RLCD bridge", version="0.1.0")
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    _start_refresher()
+    yield
+
+
+app = FastAPI(title="RLCD bridge", version="0.1.0", lifespan=_lifespan)
 SIM_PATH = Path(__file__).with_name("sim.html")
 ASSET_DIR = Path(__file__).resolve().parents[1] / "docs" / "assets"
 CLAWD_SVG_DIR = Path(__file__).resolve().parents[1] / "clawd-on-desk" / "assets" / "svg"
@@ -177,7 +186,6 @@ PET_EVENT_STATES = {
     "SubagentStop": "working",
     "PreCompact": "sweeping",
     "PostCompact": "attention",
-    "event_msg:context_compacted": "sweeping",
     "Notification": "notification",
     "PermissionRequest": "notification",
     "Elicitation": "notification",
@@ -190,6 +198,9 @@ CODEX_EVENT_STATES = {
     "PermissionRequest": "notification",
     "PostToolUse": "working",
     "Stop": "codex-turn-end",
+    "Notification": "notification",
+    "SubagentStart": "juggling",
+    "SubagentStop": "working",
     "event_msg:context_compacted": "sweeping",
 }
 ANTIGRAVITY_EVENT_STATES = {
@@ -197,7 +208,6 @@ ANTIGRAVITY_EVENT_STATES = {
     "PreToolUse": "working",
     "PostToolUse": "working",
     "PostInvocation": "idle",
-    "AfterAgent": "idle",
     "Stop": "idle",
 }
 MAX_PET_SESSIONS = int(os.environ.get("RLCD_PET_MAX_SESSIONS", "20"))
@@ -206,10 +216,62 @@ CODEX_JSONL_POLL_SEC = _float_env("RLCD_CODEX_JSONL_POLL_SEC", 1.5)
 CODEX_JSONL_RECENT_SEC = _float_env("RLCD_CODEX_JSONL_RECENT_SEC", 120.0)
 CODEX_SESSION_DIR = Path(os.environ.get("RLCD_CODEX_SESSION_DIR", "") or (Path.home() / ".codex" / "sessions"))
 CODEX_JSONL_EVENT_STATES = {
-    # Only events that hooks can't capture (Codex-internal, auto-triggered).
-    # All user/tool lifecycle events come through pet_hook.js via hooks.json.
+    # Codex-internal events read directly from session jsonl, independent of
+    # ~/.codex/hooks.json (which Clawd on Desk rewrites, breaking codex's
+    # trusted_hash and silently disabling all hooks).
+    # Mirrors clawd-on-desk/agents/codex.js logEventMap.
+    "session_meta": "idle",
     "event_msg:context_compacted": "sweeping",
     "compacted": "sweeping",
+    "event_msg:thread_rolled_back": "sweeping",
+    # Turn lifecycle: user_message/task_started = thinking (model reasoning
+    # starts before any tool actually runs, matching clawd's logEventMap).
+    "event_msg:user_message": "thinking",
+    "event_msg:task_started": "thinking",
+    "response_item:reasoning": "thinking",
+    "event_msg:agent_reasoning": "thinking",
+    # Active work signals: tool calls, command exec, patches, guardian review.
+    "response_item:function_call": "working",
+    "response_item:custom_tool_call": "working",
+    "response_item:web_search_call": "working",
+    "response_item:tool_search_call": "working",
+    "response_item:tool_search_output": "working",
+    "response_item:function_call_output": "working",
+    "response_item:custom_tool_call_output": "working",
+    "event_msg:guardian_assessment": "working",
+    "event_msg:exec_command_end": "working",
+    "event_msg:patch_apply_end": "working",
+    "event_msg:web_search_end": "working",
+    "event_msg:mcp_tool_call_end": "working",
+    # Turn end / abort: codex-turn-end is resolved by _codex_stop_state to
+    # attention (happy) when the turn had tool use, else idle.
+    "event_msg:task_complete": "codex-turn-end",
+    "event_msg:turn_aborted": "idle",
+}
+# Events that mark the start of a new codex turn (reset had_tool_use).
+CODEX_TURN_RESET_EVENTS = {
+    "UserPromptSubmit",
+    "event_msg:user_message",
+    "event_msg:task_started",
+    "session_meta",
+}
+# Events that indicate codex actually invoked a tool (set had_tool_use=True).
+CODEX_TOOL_EVENTS = {
+    "PreToolUse",
+    "PostToolUse",
+    "PostToolUseFailure",
+    "response_item:function_call",
+    "response_item:custom_tool_call",
+    "response_item:web_search_call",
+    "response_item:tool_search_call",
+    "response_item:tool_search_output",
+    "response_item:function_call_output",
+    "response_item:custom_tool_call_output",
+    "event_msg:guardian_assessment",
+    "event_msg:exec_command_end",
+    "event_msg:patch_apply_end",
+    "event_msg:web_search_end",
+    "event_msg:mcp_tool_call_end",
 }
 
 _cache_lock = threading.Lock()
@@ -228,6 +290,7 @@ class _PetSession:
     resume_state: str | None = None
     last_tool_boundary_at: datetime | None = None
     headless: bool = False
+    had_tool_use: bool = False
 
 
 @dataclass
@@ -928,7 +991,17 @@ def _is_codex_agent(agent: str) -> bool:
 
 
 def _codex_stop_state(session: _PetSession | None) -> str:
+    if session and session.had_tool_use and not session.headless:
+        return "attention"
     return "idle"
+
+
+def _codex_had_tool_use(event: str, existing: _PetSession | None) -> bool:
+    if event in CODEX_TURN_RESET_EVENTS:
+        return False
+    if event in CODEX_TOOL_EVENTS:
+        return True
+    return existing.had_tool_use if existing else False
 
 
 def _is_antigravity_agent(agent: str) -> bool:
@@ -985,6 +1058,16 @@ def _pet_state_for_event(data: dict[str, object], raw_state: str, event: str, ag
     return PET_EVENT_STATES.get(event, "idle")
 
 
+def _pet_bool(data: dict[str, object], *keys: str) -> bool:
+    for key in keys:
+        value = data.get(key)
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str) and value.strip().lower() in {"1", "true", "yes", "on"}:
+            return True
+    return False
+
+
 def _apply_pet_event(data: dict[str, object]) -> PetState:
     update = _pet_state_from_event(data)
     event = update.event
@@ -998,6 +1081,17 @@ def _apply_pet_event(data: dict[str, object]) -> PetState:
         existing = _pet_sessions.get(session_id)
         effective_agent = agent or (existing.agent if existing else "")
         effective_headless = headless or (existing.headless if existing else False)
+
+        if event == "Stop" and _is_codex_agent(effective_agent) and _pet_bool(data, "stop_hook_active"):
+            resolved_state, resolved_agent = _pet_resolved_display_state()
+            return _pet_display_state(
+                resolved_state,
+                agent=resolved_agent,
+                event=event,
+                sessions_hint=update.sessions,
+                subagents_hint=update.subagents,
+                schedule_return=False,
+            )
 
         if update.state == "codex-turn-end":
             update.state = _codex_stop_state(existing)
@@ -1061,6 +1155,7 @@ def _apply_pet_event(data: dict[str, object]) -> PetState:
                 resume_state=None,
                 last_tool_boundary_at=previous.last_tool_boundary_at if previous else None,
                 headless=effective_headless,
+                had_tool_use=previous.had_tool_use if previous else False,
             )
             _evict_old_pet_sessions()
             if update.state in SUPPRESSIBLE_ONESHOT_STATES:
@@ -1095,6 +1190,7 @@ def _apply_pet_event(data: dict[str, object]) -> PetState:
             existing.event = event
             existing.agent = effective_agent or existing.agent
             existing.last_tool_boundary_at = now if event in {"PostToolUse", "PostToolUseFailure"} else existing.last_tool_boundary_at
+            existing.had_tool_use = _codex_had_tool_use(event, existing)
         else:
             _pet_sessions[session_id] = _PetSession(
                 state=update.state,
@@ -1106,6 +1202,7 @@ def _apply_pet_event(data: dict[str, object]) -> PetState:
                     existing.last_tool_boundary_at if existing else None
                 ),
                 headless=effective_headless,
+                had_tool_use=_codex_had_tool_use(event, existing),
             )
         _evict_old_pet_sessions()
         resolved_state, resolved_agent = _pet_resolved_display_state()
@@ -1181,7 +1278,6 @@ def _fetch_other_agents_with_fallback() -> list[OtherAgentUsage]:
 
 def _build_live_report() -> UsageReport:
     claude, ds_today = fetch_claude()
-    claude.limits = fetch_limits()
     others = _fetch_other_agents_with_fallback()
     return UsageReport(
         updated_at=datetime.now(timezone.utc),
@@ -1189,6 +1285,7 @@ def _build_live_report() -> UsageReport:
         other=others,
         weather=fetch_weather(),
         deepseek=fetch_deepseek(ds_today),
+        codexradar=fetch_codexradar(),
         pet=_get_pet_state(),
     )
 
@@ -1303,17 +1400,6 @@ def _mock_report() -> UsageReport:
         updated_at=now,
         source="mock",
         claude=ClaudeUsage(
-            active_block=ActiveBlock(
-                started_at=now.replace(hour=10, minute=0, second=0, microsecond=0),
-                ends_at=now.replace(hour=15, minute=0, second=0, microsecond=0),
-                tokens_used=162_438,
-                cost_usd=4.21,
-                percent_used=0.62,
-                minutes_remaining=134,
-                projection_tokens=260_000,
-                projection_cost_usd=6.80,
-            ),
-            weekly=Bucket(tokens_used=2_410_000, cost_usd=58.13, percent_used=0.41),
             today=Bucket(tokens_used=382_000, cost_usd=9.14),
             month=Bucket(tokens_used=8_400_000, cost_usd=187.22),
             lifetime=Bucket(tokens_used=18_200_000, cost_usd=214.07),
@@ -1322,12 +1408,6 @@ def _mock_report() -> UsageReport:
                 ModelBreakdown(model="claude-sonnet-4-6", tokens=4_400_000, cost_usd=28.00),
                 ModelBreakdown(model="claude-haiku-4-5", tokens=900_000, cost_usd=6.07),
             ],
-            limits=ClaudeLimits(
-                util_5h=0.24, util_7d=0.56, status="ok",
-                reset_5h=now.replace(hour=15, minute=0, second=0, microsecond=0),
-                reset_7d=now.replace(hour=6, minute=0, second=0, microsecond=0),
-                reset_5h_min=99, reset_7d_min=2640,
-            ),
         ),
         other=[
             OtherAgentUsage(
@@ -1342,13 +1422,21 @@ def _mock_report() -> UsageReport:
                           today_tokens=2_400_000, available=True),
         pet=PetState(state="thinking", agent="mock", event="UserPromptSubmit",
                      sessions=1, asset=_pet_asset_for("thinking"), updated_at=now),
+        codexradar=CodexRadar(
+            updated_at="mock",
+            available=True,
+            points=[
+                RadarPoint(model="sol", effort="ultra", iq=92.4, price=27.59, minutes=55, passed=69, tasks=112),
+                RadarPoint(model="sol", effort="max", iq=103.1, price=8.90, minutes=34, passed=77, tasks=112),
+                RadarPoint(model="sol", effort="xhigh", iq=92.4, price=6.92, minutes=28, passed=69, tasks=112),
+                RadarPoint(model="terra", effort="ultra", iq=95.1, price=14.60, minutes=43, passed=71, tasks=112),
+                RadarPoint(model="terra", effort="max", iq=95.1, price=4.74, minutes=30, passed=71, tasks=112),
+                RadarPoint(model="terra", effort="xhigh", iq=76.3, price=2.53, minutes=19, passed=57, tasks=112),
+                RadarPoint(model="luna", effort="max", iq=93.8, price=2.39, minutes=32, passed=70, tasks=112),
+                RadarPoint(model="luna", effort="xhigh", iq=67.0, price=1.54, minutes=22, passed=50, tasks=112),
+            ],
+        ),
     )
-
-
-@app.on_event("startup")
-def _on_startup():
-    _start_refresher()
-
 
 @app.get("/healthz")
 def healthz():
