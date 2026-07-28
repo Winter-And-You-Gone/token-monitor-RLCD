@@ -25,15 +25,18 @@
 
 bridge 以 systemd `--user` 服务形式运行在与 Claude Code / Codex 同一台机器上。后台线程每 45 秒刷新一次 ccusage，使 ESP32 的 HTTP 请求始终从缓存秒返（ccusage 冷启动约需 10 秒）。宠物状态由 `bridge/pet_hook.js` 接收各 agent 生命周期事件后合并进 `/api/usage`。
 
-**14:30　☁ 24°C　IN 26.3°C 65%RH　SHENZHEN Partly**
-
-| CLAUDE | DEEPSEEK | CODEX |
-|--------|----------|-------|
-| opus 12.9M | 可用 | o3 8.2M |
-| sonnet 4.4M | ¥ 70.79 | gpt-4o 3.1M |
-| 今日 382K $9.14 | 送值 0.00 | 今日 1.2M $3.20 |
-| 本月 8.4M $187 | 充值 70.79 | 本月 28M $76 |
-| 合计 18.2M $214 | 今日 2.4M | 合计 52M $142 |
+```
+14:30                            ☁  24°C
+IN 26.3°C  65%RH         SHENZHEN  Partly
+──────────────────────────────────────────────────
+ CLAUDE           │ DEEPSEEK         │ CODEX
+ opus   12.9M     │ 可用             │ o3     8.2M
+ sonnet  4.4M     │ ¥ 70.79         │ gpt-4o 3.1M
+ ─────────────────│─────────────────│─────────────────
+ 今日 382K $9.14  │ 送值   0.00      │ 今日 1.2M $3.20
+ 本月 8.4M $187   │ 充值  70.79      │ 本月  28M $76
+ 合计 18.2M $214  │ 今日  2.4M       │ 合计  52M $142
+```
 
 ## 页面
 
@@ -130,7 +133,7 @@ AI agent 的事件通过 `rlcd-pet-zcode/` 插件（ZCode 端）或 `bridge/pet_
 
 在运行 Claude Code 的机器上（Linux）：
 
-```bash
+```
 # 1. uv（Python 包管理器）
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
@@ -146,7 +149,7 @@ ccusage --help
 
 ### 第二步 — 克隆并本地测试 bridge
 
-```bash
+```
 git clone https://github.com/Winter-And-You-Gone/token-monitor-RLCD.git
 cd token-monitor-RLCD/bridge
 
@@ -156,7 +159,7 @@ uv run python bridge.py            # 默认监听 127.0.0.1:7777
 
 新开一个终端验证：
 
-```bash
+```
 curl http://localhost:7777/api/usage | jq          # 实时数据
 curl 'http://localhost:7777/api/usage?mock=1' | jq # 模拟数据（不依赖 ccusage）
 ```
@@ -167,7 +170,7 @@ curl 'http://localhost:7777/api/usage?mock=1' | jq # 模拟数据（不依赖 cc
 
 ### 第三步 — 安装为 systemd 服务
 
-```bash
+```
 # 在仓库根目录执行：
 scripts/install-bridge-linux.sh
 ```
@@ -176,14 +179,14 @@ scripts/install-bridge-linux.sh
 `bridge/.env`；需要让 ESP32 从局域网访问时，在 `.env` 中设置 `RLCD_HOST=0.0.0.0`
 并同时设置 `RLCD_AUTH_TOKEN`。
 
-```bash
+```
 systemctl --user status rlcd-bridge
 journalctl --user -u rlcd-bridge -f
 ```
 
 如果需要退出登录后继续运行（VPS / 无头服务器）：
 
-```bash
+```
 loginctl enable-linger $USER
 ```
 
@@ -191,7 +194,7 @@ loginctl enable-linger $USER
 
 创建 `bridge/.env`（已在 .gitignore 中）并按需填写：
 
-```ini
+```
 RLCD_HOST=127.0.0.1        # 监听地址；局域网访问设 0.0.0.0，并必须设置 token
 RLCD_PORT=7777              # 监听端口（默认 7777）
 RLCD_AUTH_TOKEN=<随机串>    # 非本地访问时必须设置
@@ -230,13 +233,13 @@ DEEPSEEK_API_KEY=sk-...    # 启用 DeepSeek 余额显示（可选）
 
 修改后重启服务：
 
-```bash
+```
 systemctl --user restart rlcd-bridge
 ```
 
 **只要 bridge 不是只监听 loopback，就必须设置 `RLCD_AUTH_TOKEN`。** 生成随机 token：
 
-```bash
+```
 openssl rand -hex 32
 ```
 
@@ -249,7 +252,7 @@ openssl rand -hex 32
 
 #### Linux / macOS
 
-```bash
+```
 cd firmware
 cp main/secrets.h.example main/secrets.h
 $EDITOR main/secrets.h    # 填入 Wi-Fi SSID/密码、bridge 地址、token
@@ -260,7 +263,7 @@ idf.py build flash monitor    # Ctrl+] 退出串口监视器
 
 #### Windows（通过开始菜单 ESP-IDF PowerShell 快捷方式）
 
-```powershell
+```
 cd C:\path\to\token-monitor-RLCD\firmware
 copy main\secrets.h.example main\secrets.h
 notepad main\secrets.h    # 填入 Wi-Fi / bridge 地址 / token
@@ -295,13 +298,13 @@ idf.py build flash monitor
 
 bridge 和 ESP32 在同一个家庭/办公室网络中。
 
-```ini
+```
 # bridge/.env
 RLCD_HOST=0.0.0.0
 RLCD_AUTH_TOKEN=<随机32字节>
 ```
 
-```c
+```
 // secrets.h
 #define RLCD_BRIDGE_URL   "http://192.168.1.42:7777/api/usage"
 #define RLCD_BRIDGE_TOKEN "<相同token>"
@@ -311,13 +314,13 @@ RLCD_AUTH_TOKEN=<随机32字节>
 
 将 bridge 直接暴露在 VPS 的公网 IP 上，ESP32 通过公网连接。由于流量经过公网，强 token 和防火墙规则必不可少。
 
-```ini
+```
 # VPS 上的 bridge/.env
 RLCD_HOST=0.0.0.0
 RLCD_AUTH_TOKEN=<随机32字节>
 ```
 
-```c
+```
 // secrets.h
 #define RLCD_BRIDGE_URL   "http://203.0.113.10:7777/api/usage"
 #define RLCD_BRIDGE_TOKEN "<相同token>"
@@ -329,7 +332,7 @@ RLCD_AUTH_TOKEN=<随机32字节>
 
 更安全的方案是在 nginx 后面运行 bridge，配合 Let's Encrypt 证书做 TLS 终止。这样无需开放 7777 端口，统一走 443。
 
-```nginx
+```
 # /etc/nginx/sites-available/rlcd
 server {
     listen 443 ssl;
@@ -348,7 +351,7 @@ server {
 }
 ```
 
-```c
+```
 // secrets.h — 注意 https://
 #define RLCD_BRIDGE_URL   "https://rlcd.example.com/api/usage"
 ```
@@ -359,7 +362,7 @@ server {
 
 ESP32 需要能访问与 bridge 相同的 overlay 网络——通常通过家用路由器或常开设备（树莓派、NAS）接入 overlay 并路由流量到家庭局域网。
 
-```c
+```
 // secrets.h — Tailscale
 #define RLCD_BRIDGE_URL   "http://100.x.x.x:7777/api/usage"
 
@@ -371,7 +374,7 @@ ESP32 需要能访问与 bridge 相同的 overlay 网络——通常通过家用
 
 若 TCP 握手成功但响应始终收不到，原因是 ZeroTier 默认 MTU 2800 字节大于实际路径 MTU（约 1400 字节）。在 VPS 上修复：
 
-```bash
+```
 # 先查你的 ZeroTier 接口名：
 ip link show | grep zt
 

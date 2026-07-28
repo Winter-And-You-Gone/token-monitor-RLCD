@@ -29,15 +29,18 @@ ESP32's HTTP request always returns instantly from cache (a cold ccusage run
 takes ~10 s). Pet state is updated by `bridge/pet_hook.js`, which receives
 agent lifecycle events and folds the current animation state into `/api/usage`.
 
-**14:30　☁ 24°C　IN 26.3°C 65%RH　SHENZHEN Partly**
-
-| CLAUDE | DEEPSEEK | CODEX |
-|--------|----------|-------|
-| opus 12.9M | balance | o3 8.2M |
-| sonnet 4.4M | ¥ 70.79 | gpt-4o 3.1M |
-| today 382K $9.14 | granted 0.00 | today 1.2M $3.20 |
-| month 8.4M $187 | topped 70.79 | month 28M $76 |
-| total 18.2M $214 | today 2.4M | total 52M $142 |
+```
+14:30                            ☁  24°C
+IN 26.3°C  65%RH         SHENZHEN  Partly
+──────────────────────────────────────────────────
+ CLAUDE           │ DEEPSEEK         │ CODEX
+ opus   12.9M     │ balance          │ o3     8.2M
+ sonnet  4.4M     │ ¥ 70.79         │ gpt-4o 3.1M
+ ─────────────────│─────────────────│─────────────────
+ today 382K $9.14 │ granted   0.00   │ today 1.2M $3.20
+ month 8.4M $187  │ topped   70.79   │ month  28M $76
+ total 18.2M $214 │ today    2.4M    │ total  52M $142
+```
 
 ## Pages
 
@@ -134,7 +137,7 @@ AI agent events are forwarded to the bridge via the `rlcd-pet-zcode/` plugin (ZC
 
 On the machine where Claude Code runs (Linux):
 
-```bash
+```
 # 1. uv (Python package manager)
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
@@ -150,7 +153,7 @@ ccusage --help
 
 ### Step 2 — Clone and test the bridge
 
-```bash
+```
 git clone https://github.com/Winter-And-You-Gone/token-monitor-RLCD.git
 cd token-monitor-RLCD/bridge
 
@@ -160,28 +163,28 @@ uv run python bridge.py            # starts on :7777
 
 In another terminal:
 
-```bash
+```
 curl http://localhost:7777/api/usage | jq          # live data
 curl 'http://localhost:7777/api/usage?mock=1' | jq # canned mock — no ccusage needed
 ```
 
 ### Step 3 — Install the bridge as a systemd service
 
-```bash
+```
 # From repo root:
 scripts/install-bridge-linux.sh
 ```
 
 This creates `~/.config/systemd/user/rlcd-bridge.service`, enables it, and starts it.
 
-```bash
+```
 systemctl --user status rlcd-bridge
 journalctl --user -u rlcd-bridge -f
 ```
 
 To keep it running after logout (VPS / headless server):
 
-```bash
+```
 loginctl enable-linger $USER
 ```
 
@@ -189,7 +192,7 @@ loginctl enable-linger $USER
 
 Create `bridge/.env` (git-ignored) with any of these:
 
-```ini
+```
 RLCD_HOST=127.0.0.1        # bind address; use 0.0.0.0 for LAN access with a token
 RLCD_PORT=7777              # bind port    (default 7777)
 RLCD_AUTH_TOKEN=<random>   # required when bridge is reachable beyond loopback
@@ -225,13 +228,13 @@ RLCD_WEATHER_OVERRIDE_RETRY_SEC=30 # weather override retry interval
 
 Reload after editing:
 
-```bash
+```
 systemctl --user restart rlcd-bridge
 ```
 
 **Always set `RLCD_AUTH_TOKEN`** when the bridge listens on anything beyond loopback. Generate one with:
 
-```bash
+```
 openssl rand -hex 32
 ```
 
@@ -244,7 +247,7 @@ openssl rand -hex 32
 
 #### Linux / macOS
 
-```bash
+```
 cd firmware
 cp main/secrets.h.example main/secrets.h
 $EDITOR main/secrets.h           # fill in WiFi SSID/pass + bridge URL + token
@@ -255,7 +258,7 @@ idf.py build flash monitor       # Ctrl+] to exit monitor
 
 #### Windows (PowerShell via ESP-IDF Start Menu shortcut)
 
-```powershell
+```
 cd C:\path\to\token-monitor-RLCD\firmware
 copy main\secrets.h.example main\secrets.h
 notepad main\secrets.h           # fill in WiFi / bridge URL / token
@@ -290,13 +293,13 @@ The first build downloads `lvgl/lvgl@^9.4.0` via the IDF component manager (~50 
 
 Bridge and ESP32 are on the same home/office network.
 
-```ini
+```
 # bridge/.env
 RLCD_HOST=0.0.0.0
 RLCD_AUTH_TOKEN=<random-32-bytes>
 ```
 
-```c
+```
 // secrets.h
 #define RLCD_BRIDGE_URL   "http://192.168.1.42:7777/api/usage"
 #define RLCD_BRIDGE_TOKEN "<same-token>"
@@ -307,13 +310,13 @@ RLCD_AUTH_TOKEN=<random-32-bytes>
 Expose the bridge directly on the VPS's public IP. The ESP32 connects over the
 open internet, so a strong token and firewall rules are essential.
 
-```ini
+```
 # bridge/.env on VPS
 RLCD_HOST=0.0.0.0          # or bind to a specific public interface
 RLCD_AUTH_TOKEN=<random-32-bytes>
 ```
 
-```c
+```
 // secrets.h
 #define RLCD_BRIDGE_URL   "http://203.0.113.10:7777/api/usage"
 #define RLCD_BRIDGE_TOKEN "<same-token>"
@@ -328,7 +331,7 @@ For a more secure setup, put the bridge behind nginx with a TLS certificate
 (e.g. from Let's Encrypt via Certbot). This removes the need to open port 7777
 and lets you terminate TLS on port 443.
 
-```nginx
+```
 # /etc/nginx/sites-available/rlcd
 server {
     listen 443 ssl;
@@ -347,7 +350,7 @@ server {
 }
 ```
 
-```c
+```
 // secrets.h — note https://
 #define RLCD_BRIDGE_URL   "https://rlcd.example.com/api/usage"
 ```
@@ -362,7 +365,7 @@ The ESP32 must be reachable on the same overlay as the bridge — typically via 
 home router or always-on device (Raspberry Pi, NAS) that joins the overlay and
 routes traffic to the home LAN.
 
-```c
+```
 // secrets.h — Tailscale
 #define RLCD_BRIDGE_URL   "http://100.x.x.x:7777/api/usage"
 
@@ -375,7 +378,7 @@ routes traffic to the home LAN.
 If the TCP handshake succeeds but responses never arrive, ZeroTier's default
 2800-byte MTU is larger than the real path MTU (~1400 bytes). Fix on the VPS:
 
-```bash
+```
 # Find your ZeroTier interface name first:
 ip link show | grep zt
 
