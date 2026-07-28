@@ -52,7 +52,7 @@ Two-column display of Claude / DeepSeek / Codex today, month, and lifetime usage
 
 ### Clawd pet animation
 
-184×184 large Clawd the crab animation showing the current AI agent's working state. The character is derived from the [clawd-on-desk](https://github.com/CEJXXX/clawd-on-desk) project, re-rendered in black and white for the reflective LCD.
+184×184 large Clawd the crab animation showing the current AI agent's working state. The character is derived from the [clawd-on-desk](https://github.com/rullerzhou-afk/clawd-on-desk) project, re-rendered in black and white for the reflective LCD.
 
 ### Codex Radar
 

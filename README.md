@@ -48,7 +48,7 @@ IN 26.3°C  65%RH         SHENZHEN  Partly
 
 ### Clawd 宠物动画
 
-184×184 大尺寸 Clawd 螃蟹动画，展示当前 AI agent 的工作状态。角色衍生于 [clawd-on-desk](https://github.com/CEJXXX/clawd-on-desk) 项目，重新渲染为黑白稿以适配反射式 LCD。
+184×184 大尺寸 Clawd 螃蟹动画，展示当前 AI agent 的工作状态。角色衍生于 [clawd-on-desk](https://github.com/rullerzhou-afk/clawd-on-desk) 项目，重新渲染为黑白稿以适配反射式 LCD。
 
 ### Codex 雷达
 
