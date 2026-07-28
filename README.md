@@ -66,66 +66,66 @@ IN 26.3°C  65%RH         SHENZHEN  Partly
 - USB-C 数据线（用于烧录）。
 
 ## 架构
-	
-	```
-	Linux / macOS 主机                        ESP32-S3-RLCD-4.2
-	──────────────                            ─────────────────
-	~/.claude/**/*.jsonl                      LVGL 宠物动画 + 仪表盘
-	        │                                         ▲
-	        ▼                    局域网 HTTP           │
-	   bridge 守护进程 ── GET /api/usage (60s) ───────┘
-	   （调用 ccusage）
-	   :7777
-	```
-	
-	- **Bridge**（`bridge/`）— Python FastAPI 守护进程。调用 `ccusage blocks/daily/monthly --json`，汇总成统一 schema，在 `http://<主机>:7777/api/usage` 提供服务。以 systemd `--user` 方式运行。另有 `bridge/sim.html` 网页模拟器（`/sim` 路径），可在 PC 浏览器中预览 RLCD 渲染效果。
-	- **固件**（`firmware/`）— ESP-IDF + LVGL v9 项目。每 60 秒轮询 bridge，在 RLCD 上渲染双栏仪表盘 + 宠物动画（Clawd 小螃蟹）。
-	
-	## 宠物动画系统
-	
-	设备在仪表盘下方显示一个 Clawd 小螃蟹动画角色，根据使用状态自动切换动画：
-	
-	| 状态 | 动画 | 触发条件 |
-	|------|------|----------|
-	| idle | 看书 | 无活动 / AI agent 空闲 |
-	| thinking | 思考气泡 | AI agent 正在思考 |
-	| working | 敲键盘 | AI agent 正在输出 |
-	| juggling | 抛接球 | agent 并行任务 |
-	| headphones-groove | 戴耳机律动 | 多 agent 并发（sessions ≥ 2）|
-	| building | 盖楼 | 构建/编译中 |
-	| sweeping | 打扫 | 清理/整理 |
-	| sleeping | 睡觉 / 打盹 / 打哈欠 | 长时间无活动 |
-	| notification | 通知提醒 | 有新通知 |
-	| error | 感叹号 | 出错 |
-	| happy / carrying / debugger / conducting / bubble | — | 各类事件 |
-	
-	动画帧数据由 `scripts/gen_pet_anim.py`（56×56 小型动画）和 `scripts/gen_pet_big_anim.py`（184×184 大动画）从黑白 GIF 素材生成 C 语言帧表，编译进固件。
-	
-	### 动画素材流水线
-	
-	```
-	clawd-on-desk/assets/gif/       ← 上游彩色源素材（不动）
-	       │
-	       ▼ (重新渲染为黑白稿)
-	bridge/assets/newgif/              ← 黑白 GIF（脚本优先读取）
-	       │
-	       ├──→ bridge/assets/clawd_rlcd/size-184/gifs/  ← 大动画模拟器预览
-	       └──→ bridge/assets/clawd_rlcd/size-56/gifs/   ← 小动画模拟器预览
-	       │
-	       ▼ (栅格化缩放，生成 C 帧表)
-	scripts/gen_pet_anim.py → firmware/components/ui_app/pet_anim.c
-	scripts/gen_pet_big_anim.py → firmware/components/ui_app/pet_big_anim.c
-	```
-	
-	### ZCode / Claude Code / Codex 集成
-	
-	AI agent 的事件通过 `rlcd-pet-zcode/` 插件（ZCode 端）或 `bridge/pet_hook.js`（通用端）转发给 bridge，bridge 按事件类型切换到对应动画。
-	
-	- **`rlcd-pet-zcode/`** — ZCode 插件，通过 `hooks/run-hook.cmd` 将 ZCode 生命周期事件转发给 `pet_hook.js --agent zcode`
-	- **`bridge/pet_hook.js`** — 事件→状态映射的单一真相源，支持 `--agent` 参数区分来源
-	- 多 agent 并发（sessions ≥ 2）自动走 `headphones-groove` 动画
-	
-	---
+
+```
+Linux / macOS 主机                        ESP32-S3-RLCD-4.2
+──────────────                            ─────────────────
+~/.claude/**/*.jsonl                      LVGL 宠物动画 + 仪表盘
+        │                                         ▲
+        ▼                    局域网 HTTP           │
+   bridge 守护进程 ── GET /api/usage (60s) ───────┘
+   （调用 ccusage）
+   :7777
+```
+
+- **Bridge**（`bridge/`）— Python FastAPI 守护进程。调用 `ccusage blocks/daily/monthly --json`，汇总成统一 schema，在 `http://<主机>:7777/api/usage` 提供服务。以 systemd `--user` 方式运行。另有 `bridge/sim.html` 网页模拟器（`/sim` 路径），可在 PC 浏览器中预览 RLCD 渲染效果。
+- **固件**（`firmware/`）— ESP-IDF + LVGL v9 项目。每 60 秒轮询 bridge，在 RLCD 上渲染双栏仪表盘 + 宠物动画（Clawd 小螃蟹）。
+
+## 宠物动画系统
+
+设备在仪表盘下方显示一个 Clawd 小螃蟹动画角色，根据使用状态自动切换动画：
+
+| 状态 | 动画 | 触发条件 |
+|------|------|----------|
+| idle | 看书 | 无活动 / AI agent 空闲 |
+| thinking | 思考气泡 | AI agent 正在思考 |
+| working | 敲键盘 | AI agent 正在输出 |
+| juggling | 抛接球 | agent 并行任务 |
+| headphones-groove | 戴耳机律动 | 多 agent 并发（sessions ≥ 2）|
+| building | 盖楼 | 构建/编译中 |
+| sweeping | 打扫 | 清理/整理 |
+| sleeping | 睡觉 / 打盹 / 打哈欠 | 长时间无活动 |
+| notification | 通知提醒 | 有新通知 |
+| error | 感叹号 | 出错 |
+| happy / carrying / debugger / conducting / bubble | — | 各类事件 |
+
+动画帧数据由 `scripts/gen_pet_anim.py`（56×56 小型动画）和 `scripts/gen_pet_big_anim.py`（184×184 大动画）从黑白 GIF 素材生成 C 语言帧表，编译进固件。
+
+### 动画素材流水线
+
+```
+clawd-on-desk/assets/gif/       ← 上游彩色源素材（不动）
+       │
+       ▼ (重新渲染为黑白稿)
+bridge/assets/newgif/              ← 黑白 GIF（脚本优先读取）
+       │
+       ├──→ bridge/assets/clawd_rlcd/size-184/gifs/  ← 大动画模拟器预览
+       └──→ bridge/assets/clawd_rlcd/size-56/gifs/   ← 小动画模拟器预览
+       │
+       ▼ (栅格化缩放，生成 C 帧表)
+scripts/gen_pet_anim.py → firmware/components/ui_app/pet_anim.c
+scripts/gen_pet_big_anim.py → firmware/components/ui_app/pet_big_anim.c
+```
+
+### ZCode / Claude Code / Codex 集成
+
+AI agent 的事件通过 `rlcd-pet-zcode/` 插件（ZCode 端）或 `bridge/pet_hook.js`（通用端）转发给 bridge，bridge 按事件类型切换到对应动画。
+
+- **`rlcd-pet-zcode/`** — ZCode 插件，通过 `hooks/run-hook.cmd` 将 ZCode 生命周期事件转发给 `pet_hook.js --agent zcode`
+- **`bridge/pet_hook.js`** — 事件→状态映射的单一真相源，支持 `--agent` 参数区分来源
+- 多 agent 并发（sessions ≥ 2）自动走 `headphones-groove` 动画
+
+---
 
 ## 部署步骤
 

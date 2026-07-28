@@ -71,65 +71,65 @@ Two-column display of Claude / DeepSeek / Codex today, month, and lifetime usage
 
 ## Architecture
 
-	```
-	Linux / macOS PC                          ESP32-S3-RLCD-4.2
-	────────────────                          ─────────────────
-	~/.claude/**/*.jsonl                      LVGL pet animation + dashboard
-	        │                                         ▲
-	        ▼                      LAN HTTP           │
-	   bridge daemon ──── GET /api/usage (60s) ──────┘
-	   (spawns ccusage)
-	   :7777
-	```
-	
-	- **Bridge** (`bridge/`) — Python FastAPI daemon. Spawns `ccusage blocks/daily/monthly --json`, flattens into one schema, serves at `http://<host>:7777/api/usage`. Runs under systemd `--user`. Includes a web simulator at `bridge/sim.html` (served at `/sim`).
-	- **Firmware** (`firmware/`) — ESP-IDF + LVGL v9. Polls the bridge every 60 s, renders a two-column dashboard on the RLCD with a pet animation (Clawd the crab).
+```
+Linux / macOS PC                          ESP32-S3-RLCD-4.2
+────────────────                          ─────────────────
+~/.claude/**/*.jsonl                      LVGL pet animation + dashboard
+        │                                         ▲
+        ▼                      LAN HTTP           │
+   bridge daemon ──── GET /api/usage (60s) ──────┘
+   (spawns ccusage)
+   :7777
+```
 
-	## Pet Animation System
+- **Bridge** (`bridge/`) — Python FastAPI daemon. Spawns `ccusage blocks/daily/monthly --json`, flattens into one schema, serves at `http://<host>:7777/api/usage`. Runs under systemd `--user`. Includes a web simulator at `bridge/sim.html` (served at `/sim`).
+- **Firmware** (`firmware/`) — ESP-IDF + LVGL v9. Polls the bridge every 60 s, renders a two-column dashboard on the RLCD with a pet animation (Clawd the crab).
 
-	The device shows a Clawd crab character below the dashboard, switching animations based on usage state:
+## Pet Animation System
 
-	| State | Animation | Trigger |
-	|-------|-----------|---------|
-	| idle | reading book | No activity / AI agent idle |
-	| thinking | thought bubble | AI agent is thinking |
-	| working | typing at keyboard | AI agent is generating |
-	| juggling | juggling balls | Agent parallel tasks |
-	| headphones-groove | headphones dancing | Multi-agent (sessions ≥ 2) |
-	| building | building blocks | Building/compiling in progress |
-	| sweeping | sweeping | Cleanup/organizing |
-	| sleeping | sleep / yawn / doze | Long inactivity |
-	| notification | notification bell | New notification |
-	| error | exclamation mark | Error occurred |
-	| happy / carrying / debugger / conducting / bubble | — | Various events |
+The device shows a Clawd crab character below the dashboard, switching animations based on usage state:
 
-	Animation frame data is generated from black/white GIF sources by `scripts/gen_pet_anim.py` (56×56) and `scripts/gen_pet_big_anim.py` (184×184), compiled into the firmware as C frame tables.
+| State | Animation | Trigger |
+|-------|-----------|---------|
+| idle | reading book | No activity / AI agent idle |
+| thinking | thought bubble | AI agent is thinking |
+| working | typing at keyboard | AI agent is generating |
+| juggling | juggling balls | Agent parallel tasks |
+| headphones-groove | headphones dancing | Multi-agent (sessions ≥ 2) |
+| building | building blocks | Building/compiling in progress |
+| sweeping | sweeping | Cleanup/organizing |
+| sleeping | sleep / yawn / doze | Long inactivity |
+| notification | notification bell | New notification |
+| error | exclamation mark | Error occurred |
+| happy / carrying / debugger / conducting / bubble | — | Various events |
 
-	### Asset Pipeline
+Animation frame data is generated from black/white GIF sources by `scripts/gen_pet_anim.py` (56×56) and `scripts/gen_pet_big_anim.py` (184×184), compiled into the firmware as C frame tables.
 
-	```
-	clawd-on-desk/assets/gif/       ← Upstream color GIFs (do not touch)
-	       │
-	       ▼ (re-rendered as black/white)
-	bridge/assets/newgif/              ← B/W GIFs (scripts read these first)
-	       │
-	       ├──→ bridge/assets/clawd_rlcd/size-184/gifs/  ← Big anim preview
-	       └──→ bridge/assets/clawd_rlcd/size-56/gifs/   ← Small anim preview
-	       │
-	       ▼ (rasterize + resize, generate C tables)
-	scripts/gen_pet_anim.py → firmware/components/ui_app/pet_anim.c
-	scripts/gen_pet_big_anim.py → firmware/components/ui_app/pet_big_anim.c
-	```
+### Asset Pipeline
 
-	### ZCode / Claude Code / Codex Integration
+```
+clawd-on-desk/assets/gif/       ← Upstream color GIFs (do not touch)
+       │
+       ▼ (re-rendered as black/white)
+bridge/assets/newgif/              ← B/W GIFs (scripts read these first)
+       │
+       ├──→ bridge/assets/clawd_rlcd/size-184/gifs/  ← Big anim preview
+       └──→ bridge/assets/clawd_rlcd/size-56/gifs/   ← Small anim preview
+       │
+       ▼ (rasterize + resize, generate C tables)
+scripts/gen_pet_anim.py → firmware/components/ui_app/pet_anim.c
+scripts/gen_pet_big_anim.py → firmware/components/ui_app/pet_big_anim.c
+```
 
-	AI agent events are forwarded to the bridge via the `rlcd-pet-zcode/` plugin (ZCode) or `bridge/pet_hook.js` (generic). The bridge switches to the matching animation.
+### ZCode / Claude Code / Codex Integration
 
-	- **`rlcd-pet-zcode/`** — ZCode plugin, forwards lifecycle events via `hooks/run-hook.cmd` → `pet_hook.js --agent zcode`
-	- **`bridge/pet_hook.js`** — Single source of truth for event→state mapping; supports `--agent` flag to distinguish sources
-	- Multi-agent concurrency (sessions ≥ 2) switches to `headphones-groove` animation automatically
+AI agent events are forwarded to the bridge via the `rlcd-pet-zcode/` plugin (ZCode) or `bridge/pet_hook.js` (generic). The bridge switches to the matching animation.
 
-	---
+- **`rlcd-pet-zcode/`** — ZCode plugin, forwards lifecycle events via `hooks/run-hook.cmd` → `pet_hook.js --agent zcode`
+- **`bridge/pet_hook.js`** — Single source of truth for event→state mapping; supports `--agent` flag to distinguish sources
+- Multi-agent concurrency (sessions ≥ 2) switches to `headphones-groove` animation automatically
+
+---
 
 ## Deployment
 
