@@ -33,15 +33,13 @@ agent lifecycle events and folds the current animation state into `/api/usage`.
 14:30                            ☁  24°C
 IN 26.3°C  65%RH         SHENZHEN  Partly
 ──────────────────────────────────────────
- CLAUDE           │  DEEPSEEK
- opus       12.9M │      balance
- sonnet      4.4M │    ¥ 70.79
- ─────────────────│──────────────────────
- today  382K $9.14│ granted      0.00
- month  8.4M  $187│ topped       70.79
- total 18.2M  $214│ today tokens 2.4M
-
- Carousel: Claude → Codex → DeepSeek
+ CLAUDE           │ CODEX            │ DEEPSEEK
+ opus   12.9M     │ o3     8.2M      │      balance
+ sonnet  4.4M     │ gpt-4o 3.1M      │    ¥ 70.79
+ ──────────────── │ ──────────────── │ ────────────────
+ today 382K $9.14 │ today 1.2M $3.20 │ granted   0.00
+ month 8.4M $187  │ month  28M $76   │ topped   70.79
+ total 18.2M $214 │ total  52M $142  │ today    2.4M
 ```
 
 ## Pages
