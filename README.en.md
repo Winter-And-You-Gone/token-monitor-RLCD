@@ -40,6 +40,8 @@ IN 26.3°C  65%RH         SHENZHEN  Partly
  today  382K $9.14│ granted      0.00
  month  8.4M  $187│ topped       70.79
  total 18.2M  $214│ today tokens 2.4M
+
+ Carousel: Claude → Codex → DeepSeek
 ```
 
 ## Pages

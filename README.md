@@ -36,6 +36,8 @@ IN 26.3°C  65%RH         SHENZHEN  Partly
  今日  382K  $9.14│ 送值        0.00
  本月  8.4M   $187│ 充值       70.79
  合计 18.2M   $214│ 今日token 2.4M
+
+ 双栏轮播: Claude → Codex → DeepSeek
 ```
 
 ## 页面
