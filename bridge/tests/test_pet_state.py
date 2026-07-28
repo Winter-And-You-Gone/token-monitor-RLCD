@@ -143,7 +143,7 @@ class PetStateMappingTests(unittest.TestCase):
     def test_codex_transcript_session_id_is_normalized(self) -> None:
         session_id = bridge._pet_session_id({
             "transcript_path": (
-                "C:/Users/Winter/.codex/sessions/2026/05/31/"
+                "C:/Users/<user>/.codex/sessions/2026/05/31/"
                 "rollout-2026-05-31T12-00-00-123e4567-e89b-12d3-a456-426614174000.jsonl"
             ),
         }, "codex")

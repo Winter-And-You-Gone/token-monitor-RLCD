@@ -35,8 +35,8 @@ opencode 通过 `~/.config/opencode/opencode.json` 的 `plugin` 数组加载插�
 // ~/.config/opencode/opencode.json
 {
   "plugin": [
-    "X:/ClawdOnDesk/Clawd on Desk/resources/app.asar.unpacked/hooks/opencode-plugin",
-    "X:/ESP32-S3 RLCD/token-monitor-RLCD/rlcd-pet-opencode"
+    "<clawd-on-desk-plugin-path>",
+    "<repo>/rlcd-pet-opencode"
   ]
 }
 ```

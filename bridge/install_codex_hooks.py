@@ -28,6 +28,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "bridge" / "codex_hooks.json"
+EXAMPLE = ROOT / "bridge" / "codex_hooks.json.example"
 DST = Path.home() / ".codex" / "hooks.json"
 MARKER = "pet_hook.js"
 
@@ -83,8 +84,15 @@ def main() -> int:
     args = ap.parse_args()
 
     if not SRC.exists():
-        print(f"[install_codex_hooks] source missing: {SRC}", file=sys.stderr)
-        return 2
+        if EXAMPLE.exists():
+            text = EXAMPLE.read_text(encoding="utf-8")
+            repo_path = str(ROOT).replace("\\", "/")
+            text = text.replace("<repo>", repo_path)
+            SRC.write_text(text, encoding="utf-8")
+            print(f"[install_codex_hooks] generated {SRC} from {EXAMPLE}")
+        else:
+            print(f"[install_codex_hooks] source missing: {SRC}", file=sys.stderr)
+            return 2
     src = _load(SRC)
     dst = _load(DST)
 

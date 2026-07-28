@@ -94,7 +94,7 @@ class PetHookTests(unittest.TestCase):
         body = self.run_hook(["Stop"], {
             "hook_event_name": "Stop",
             "transcript_path": (
-                "C:/Users/Winter/.codex/sessions/2026/05/31/"
+                "C:/Users/<user>/.codex/sessions/2026/05/31/"
                 "rollout-2026-05-31T12-00-00-123e4567-e89b-12d3-a456-426614174000.jsonl"
             ),
         })

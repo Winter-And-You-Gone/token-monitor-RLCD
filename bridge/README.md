@@ -24,10 +24,6 @@ Open `http://localhost:7777/sim` for a browser-based RLCD simulator. It uses
 the same `/api/usage` endpoint, supports mock/live mode, token auth, weather
 location override, auto refresh, and stale/offline states.
 
-Local supplemental assets and reference projects live under `X:\ESP` on the
-development machine. If the simulator or pet animation assets are missing Clawd
-SVG/GIF files, vendor demos, or source icons, copy or sync them from there into
-the matching repo directory.
 
 ## RLCD pet state hook
 
@@ -63,7 +59,7 @@ Claude Code hook entries use the event name as the final argument:
           {
             "type": "command",
             "shell": "powershell",
-            "command": "& \"node\" \"X:/ESP32-S3 RLCD/token-monitor-RLCD/bridge/pet_hook.js\" UserPromptSubmit --agent claude-code",
+            "command": "& \"node\" \"<repo>/bridge/pet_hook.js\" UserPromptSubmit --agent claude-code",
             "async": true,
             "timeout": 5
           }
@@ -100,7 +96,7 @@ codex** so it re-approves the hooks. The merged entry format:
         "hooks": [
           {
             "type": "command",
-            "command": "& \"F:\\Node\\node.exe\" \"X:/ESP32-S3 RLCD/token-monitor-RLCD/bridge/pet_hook.js\" UserPromptSubmit --agent codex",
+            "command": "& \"node\" \"<repo>/bridge/pet_hook.js\" UserPromptSubmit --agent codex",
             "timeout": 5
           }
         ]
@@ -119,7 +115,7 @@ Antigravity's native permission UI own approvals:
     "PreInvocation": [
       {
         "type": "command",
-        "command": "& \"node\" \"X:/ESP32-S3 RLCD/token-monitor-RLCD/bridge/pet_hook.js\" PreInvocation --agent antigravity-cli",
+        "command": "& \"node\" \"<repo>/bridge/pet_hook.js\" PreInvocation --agent antigravity-cli",
         "timeout": 10
       }
     ],
@@ -129,7 +125,7 @@ Antigravity's native permission UI own approvals:
         "hooks": [
           {
             "type": "command",
-            "command": "& \"node\" \"X:/ESP32-S3 RLCD/token-monitor-RLCD/bridge/pet_hook.js\" PostToolUse --agent antigravity-cli",
+            "command": "& \"node\" \"<repo>/bridge/pet_hook.js\" PostToolUse --agent antigravity-cli",
             "timeout": 10
           }
         ]
@@ -138,14 +134,14 @@ Antigravity's native permission UI own approvals:
     "PostInvocation": [
       {
         "type": "command",
-        "command": "& \"node\" \"X:/ESP32-S3 RLCD/token-monitor-RLCD/bridge/pet_hook.js\" PostInvocation --agent antigravity-cli",
+        "command": "& \"node\" \"<repo>/bridge/pet_hook.js\" PostInvocation --agent antigravity-cli",
         "timeout": 10
       }
     ],
     "Stop": [
       {
         "type": "command",
-        "command": "& \"node\" \"X:/ESP32-S3 RLCD/token-monitor-RLCD/bridge/pet_hook.js\" Stop --agent antigravity-cli",
+        "command": "& \"node\" \"<repo>/bridge/pet_hook.js\" Stop --agent antigravity-cli",
         "timeout": 10
       }
     ]

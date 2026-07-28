@@ -34,7 +34,7 @@ zcode 通过 `~/.zcode/cli/config.json` 的 `plugins.dirs` 发现本地插件
   "mcp": { /* ... */ },
   "plugins": {
     "dirs": [
-      "X:\\ESP32-S3 RLCD\\token-monitor-RLCD\\rlcd-pet-zcode"
+      "<repo>\\rlcd-pet-zcode"
     ],
     "enabledPlugins": {
       "superpowers@zcode-plugins-official": true,
@@ -74,8 +74,8 @@ zcode 生命周期事件
 uv run python bridge.py
 
 :: 2. 模拟 zcode 注入 PLUGIN_ROOT,直接调 run-hook.cmd
-set CLAUDE_PLUGIN_ROOT=X:\ESP32-S3 RLCD\token-monitor-RLCD\rlcd-pet-zcode
-"X:\ESP32-S3 RLCD\token-monitor-RLCD\rlcd-pet-zcode\hooks\run-hook.cmd" PreToolUse
+set CLAUDE_PLUGIN_ROOT=<repo>\rlcd-pet-zcode
+"<repo>\rlcd-pet-zcode\hooks\run-hook.cmd" PreToolUse
 
 :: 3. 查摆件状态,应看到 agent=zcode, state=working
 curl http://127.0.0.1:7777/api/pet/state

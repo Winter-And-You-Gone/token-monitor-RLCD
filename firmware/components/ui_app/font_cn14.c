@@ -1,7 +1,7 @@
 /*******************************************************************************
  * Size: 14 px
  * Bpp: 1
- * Opts: --font C:\Windows\Fonts\simhei.ttf --size 14 --bpp 1 --format lvgl --no-compress -r 0x20-0x7F --symbols ℃°温湿度供室内等待服务今日本月合计可用送值充值晴多云雨雪雾在线离线来源更新杭州初始化电量雷达实时于后刷数据题基准测试每分钟 -o X:\ESP32-S3 RLCD\token-monitor-RLCD\firmware\components\ui_app\font_cn14.c
+ * Opts: --font simhei.ttf --size 14 --bpp 1 --format lvgl --no-compress
  ******************************************************************************/
 
 #ifdef LV_LVGL_H_INCLUDE_SIMPLE

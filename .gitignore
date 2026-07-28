@@ -54,3 +54,10 @@ bridge/assets/newgif/*-frames.zip
 
 # QA contact sheets (generated)
 bridge/assets/clawd_rlcd/**/contact_sheet.png
+
+# AI agent internal docs (machine-specific paths)
+AGENTS.md
+docs/TOOLCHAIN.md
+
+# Codex hooks (generated from .example by install_codex_hooks.py)
+bridge/codex_hooks.json
