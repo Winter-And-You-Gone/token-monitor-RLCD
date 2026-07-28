@@ -2,7 +2,7 @@
 
 [中文文档](README.md)
 
-A desktop ornament that shows your live Claude (Pro/Max + API) and DeepSeek usage on a Waveshare ESP32-S3-RLCD-4.2 reflective-LCD board.
+A desktop ornament that shows your live Claude, Codex, and DeepSeek usage on a Waveshare ESP32-S3-RLCD-4.2 reflective-LCD board.
 
 ![device photo](device_photo.png)
 
@@ -14,31 +14,30 @@ A desktop ornament that shows your live Claude (Pro/Max + API) and DeepSeek usag
          ▼
    bridge daemon                              ESP32-S3-RLCD-4.2
    ─────────────                              ─────────────────
-   • runs ccusage to parse session logs       • connects to WiFi on boot
-   • fetches real 5h/7d window limits         • polls GET /api/usage every 60 s
-     from Anthropic API headers               • parses JSON with cJSON
+   • runs ccusage to parse local usage        • connects to WiFi on boot
+   • aggregates Claude / Codex day-month-life • polls GET /api/usage every 60 s
+                                              • parses JSON with cJSON
    • fetches DeepSeek account balance         • drives LVGL two-column UI:
-   • fetches outdoor weather (open-meteo)       left  → Claude stats + bars
-   • caches result, serves JSON on :7777        right → DeepSeek balance
+   • fetches outdoor weather (CMA/Open-Meteo)   carousel → Claude / DeepSeek / Codex
+   • receives AI agent lifecycle pet events     top pet + large pet page
+   • caches result, serves JSON on :7777
                                               • reads indoor temp/RH (SHTC3)
                                               • shows time via NTP (CST-8)
 ```
 
 The bridge runs as a systemd `--user` service on the same machine as Claude
-Code. It keeps a background thread that refreshes ccusage every 45 s so the
+Code / Codex. It keeps a background thread that refreshes ccusage every 45 s so the
 ESP32's HTTP request always returns instantly from cache (a cold ccusage run
-takes ~10 s). Real-time 5h/7d utilization comes from a separate root systemd
-timer that probes the Anthropic API every 3 min and writes the result to a
-shared JSON file the bridge reads.
+takes ~10 s). Pet state is updated by `bridge/pet_hook.js`, which receives
+agent lifecycle events and folds the current animation state into `/api/usage`.
 
 ```
 14:30                            ☁  24°C
 IN 26.3°C  65%RH         SHENZHEN  Partly
 ──────────────────────────────────────────
  CLAUDE           │  DEEPSEEK
- 5h [████░░] 62%  │
- 7d [████░░] 41%  │      balance
- reset in 2h14m   │    ¥ 70.79
+ opus       12.9M │      balance
+ sonnet      4.4M│    ¥ 70.79
  ─────────────────│──────────────────────
  today   162k  $4.21│ granted      0.00
  month   8.4M   $187│ topped      70.79
@@ -175,40 +174,37 @@ loginctl enable-linger $USER
 Create `bridge/.env` (git-ignored) with any of these:
 
 ```ini
-RLCD_HOST=0.0.0.0          # bind address (default 0.0.0.0)
+RLCD_HOST=127.0.0.1        # bind address; use 0.0.0.0 for LAN access with a token
 RLCD_PORT=7777              # bind port    (default 7777)
 RLCD_AUTH_TOKEN=<random>   # required when bridge is reachable beyond loopback
 RLCD_PET_MOUSE_MONITOR=1    # Windows bridge monitors mouse movement to reset/wake pet idle-sleep timing
-	RLCD_PET_MOUSE_POLL_SEC=0.5 # mouse position poll interval
-	RLCD_PET_MOUSE_IDLE_SEC=20   # seconds with no pet events before one idle animation
-	RLCD_PET_IDLE_LOOK_SEC=14    # idle animation duration; default uses the reading animation
-	RLCD_PET_MOUSE_SLEEP_SEC=300 # seconds with no pet events before yawning/dozing/sleeping; original Clawd is 60
-	RLCD_PET_SLEEP_SEQUENCE=1    # set 0 to disable the automatic sleep sequence
-	RLCD_PET_ACTIVE_TTL_SEC=90   # pet active state TTL (seconds)
-	RLCD_PET_COMPLETED_HOLD_SEC=2.0 # how long to hold the "completed" state (seconds)
-	RLCD_PET_YAWN_SEC=3.0        # yawning animation duration (seconds)
-	RLCD_PET_DEEP_SLEEP_SEC=600  # deep sleep timeout (seconds of no events)
-	RLCD_PET_COLLAPSE_SEC=0.8    # collapse-to-sleep transition duration (seconds)
-	RLCD_PET_WAKE_SEC=1.5        # wake-up transition duration (seconds)
-	RLCD_PET_IDLE_LOOK_ASSET=clawd-idle-reading.svg  # idle fidget animation asset
-	RLCD_PET_MOUSE_MIN_DELTA=1.0 # minimum mouse move distance to trigger (pixels)
-	RLCD_PET_MAX_SESSIONS=20     # max Codex/Jupyter sessions
-	RLCD_CODEX_JSONL_MONITOR=1   # enable Codex JSONL monitoring
-	RLCD_CODEX_JSONL_POLL_SEC=1.5 # Codex JSONL poll interval
-	RLCD_CODEX_JSONL_RECENT_SEC=120 # Codex recent session time window (seconds)
-	RLCD_REFRESH_SEC=45          # ccusage background refresh interval (seconds)
-	RLCD_INCLUDE_OTHERS=1        # include "others" category in dashboard
-	RLCD_ALLOW_QUERY_TOKEN=0     # set to 1 to allow ?token= in query string (default: header only)
-	RLCD_TZ=Asia/Hong_Kong       # day-rollover timezone for "today/month" usage
-	RLCD_TOKEN_LIMIT=100M        # fixed token capacity; supports 100M/1.5B/50000000
-	RLCD_BLOCK_LIMIT_TOKENS=100M # optional: 5h progress bar token limit
-	RLCD_WEEKLY_LIMIT_TOKENS=100M # optional: weekly progress bar token limit
-	RLCD_WEATHER_CMA=1           # enable CMA (China Meteorological Admin) for Chinese city names
-	RLCD_WEATHER_LAT=30.2741     # fallback latitude (default: Hangzhou)
-	RLCD_WEATHER_LON=120.1551    # fallback longitude
-	RLCD_WEATHER_CITY=Hangzhou   # city label on device (≤8 chars)
-	RLCD_WEATHER_OVERRIDE_TTL=600 # weather override data TTL (seconds)
-	RLCD_WEATHER_OVERRIDE_RETRY_SEC=30 # weather override retry interval
+RLCD_PET_MOUSE_POLL_SEC=0.5 # mouse position poll interval
+RLCD_PET_MOUSE_IDLE_SEC=20   # seconds with no pet events before one idle animation
+RLCD_PET_IDLE_LOOK_SEC=14    # idle animation duration; default uses the reading animation
+RLCD_PET_MOUSE_SLEEP_SEC=300 # seconds with no pet events before yawning/dozing/sleeping; original Clawd is 60
+RLCD_PET_SLEEP_SEQUENCE=1    # set 0 to disable the automatic sleep sequence
+RLCD_PET_ACTIVE_TTL_SEC=90   # pet active state TTL (seconds)
+RLCD_PET_COMPLETED_HOLD_SEC=2.0 # how long to hold the "completed" state (seconds)
+RLCD_PET_YAWN_SEC=3.0        # yawning animation duration (seconds)
+RLCD_PET_DEEP_SLEEP_SEC=600  # deep sleep timeout (seconds of no events)
+RLCD_PET_COLLAPSE_SEC=0.8    # collapse-to-sleep transition duration (seconds)
+RLCD_PET_WAKE_SEC=1.5        # wake-up transition duration (seconds)
+RLCD_PET_IDLE_LOOK_ASSET=clawd-idle-reading.svg  # idle fidget animation asset
+RLCD_PET_MOUSE_MIN_DELTA=1.0 # minimum mouse move distance to trigger (pixels)
+RLCD_PET_MAX_SESSIONS=20     # max Codex/Jupyter sessions
+RLCD_CODEX_JSONL_MONITOR=1   # enable Codex JSONL monitoring
+RLCD_CODEX_JSONL_POLL_SEC=1.5 # Codex JSONL poll interval
+RLCD_CODEX_JSONL_RECENT_SEC=120 # Codex recent session time window (seconds)
+RLCD_REFRESH_SEC=45          # ccusage background refresh interval (seconds)
+RLCD_INCLUDE_OTHERS=1        # include "others" category in dashboard
+RLCD_ALLOW_QUERY_TOKEN=0     # set to 1 to allow ?token= in query string (default: header only)
+RLCD_TZ=Asia/Hong_Kong       # day-rollover timezone for "today/month" usage
+RLCD_WEATHER_CMA=1           # enable CMA (China Meteorological Admin) for Chinese city names
+RLCD_WEATHER_LAT=30.2741     # fallback latitude (default: Hangzhou)
+RLCD_WEATHER_LON=120.1551    # fallback longitude
+RLCD_WEATHER_CITY=Hangzhou   # city label on device (≤8 chars)
+RLCD_WEATHER_OVERRIDE_TTL=600 # weather override data TTL (seconds)
+RLCD_WEATHER_OVERRIDE_RETRY_SEC=30 # weather override retry interval
 ```
 
 Reload after editing:
@@ -223,29 +219,7 @@ systemctl --user restart rlcd-bridge
 openssl rand -hex 32
 ```
 
-### Step 4 — Real 5h/7d utilization (optional, requires root)
-
-The real window utilization shown by Claude Code's `/usage` command comes from
-`anthropic-ratelimit-unified-*` response headers. A root systemd timer reads the
-OAuth token from `/root/.claude/.credentials.json` and writes the values to
-`/run/rlcd/claude-limits.json` every 3 minutes.
-
-```bash
-sudo install -m 0755 scripts/rlcd-claude-limits.py /usr/local/sbin/rlcd-claude-limits.py
-sudo cp scripts/rlcd-claude-limits.service scripts/rlcd-claude-limits.timer \
-       /etc/systemd/system/
-sudo systemctl enable --now rlcd-claude-limits.timer
-sudo systemctl status rlcd-claude-limits.timer
-```
-
-Each run costs one 1-token Haiku message (negligible). If the OAuth token
-expires, `limits.status` becomes `stale` and the device keeps showing the last
-good values.
-
-> Anthropic does **not** publish plan limits via API. Set
-> `RLCD_WEEKLY_LIMIT_USD` / `RLCD_BLOCK_LIMIT_USD` to enable the % bars.
-
-### Step 5 — Build and flash the firmware
+### Step 4 — Build and flash the firmware
 
 #### Prerequisites
 
@@ -285,11 +259,11 @@ idf.py build flash monitor
 
 The first build downloads `lvgl/lvgl@^9.4.0` via the IDF component manager (~50 MB) — needs internet.
 
-### Step 6 — Verify
+### Step 5 — Verify
 
 1. Serial monitor prints `connecting to <ssid>...` → `got IP ...`, then the dashboard fills.
 2. Use mock mode first: set `RLCD_BRIDGE_URL` to `.../api/usage?mock=1`, flash, confirm the UI renders.
-3. Switch to live mode, run Claude Code for a minute, watch `active_block.tokens_used` increase on the next poll.
+3. Switch to live mode, run Claude Code / Codex for a minute, watch `claude.today.tokens_used` or `other[].today.tokens_used` increase on the next poll.
 4. Stop the bridge: UI should show `(stale)` but not crash.
 
 ---
@@ -409,7 +383,6 @@ token-monitor-RLCD/
 	│   ├── sim.html               # RLCD web simulator (/sim route)
 	│   ├── sources/
 	│   │   ├── claude_local.py    # ccusage integration
-	│   │   ├── claude_limits.py   # reads /run/rlcd/claude-limits.json
 	│   │   ├── deepseek.py        # DeepSeek balance API
 	│   │   └── weather.py         # CMA first, Open-Meteo/Caiyun fallback
 	│   ├── assets/
@@ -431,8 +404,6 @@ token-monitor-RLCD/
 	│   ├── gen_icons.py              # Icon sprite sheet generator
 	│   ├── convert_clawd_to_rlcd_bw.py   # Color GIF → B/W GIF converter
 	│   ├── install-bridge-linux.sh          # systemd --user installer
-	│   ├── rlcd-claude-limits.py            # root timer: fetch + write limits JSON
-	│   ├── rlcd-claude-limits.{service,timer}
 	│   └── vps-zt-mtu-fix.sh                # ZeroTier MTU/MSS fix
 	├── clawd-on-desk/            # Clawd crab reference project (upstream animation source)
 	├── rlcd-pet-zcode/           # ZCode plugin: forwards AI agent lifecycle events as animation triggers

@@ -1,37 +1,39 @@
-RLCD UI — terminal-style monospace layout (~42 cols)
-====================================================
+RLCD UI - current 400x300 dashboard (~42 cols)
+==============================================
 
 Main screen
 -----------
-claude-code @ rlcd ~ $ status        14:30
+14:30                 [pet]          ☁ 24°C
+温度 24.3℃  湿度 56%              SHENZHEN 多云
 ──────────────────────────────────────────
-5h window  [██████░░░░] 62%
-  162,438 tokens · $4.21
-  reset in 2h 14m
-
-weekly     [████░░░░░░] 41%
-
-today     382k tok    $9.14
-month    8.4M tok   $187.22
-total   18.2M tok   $214.07
-
+ CLAUDE             │  DEEPSEEK
+ opus-4-7     12.9M │        可用
+ sonnet-4-6    4.4M │      ¥70.79
+ haiku-4-5     900K │
+ ───────────────────│─────────────────────
+ 今日     382K  $9.14│ 送值          0.00
+ 本月     8.4M   $187│ 充值         70.79
+ 合计    18.2M   $214│ 今日token     2.4M
 ──────────────────────────────────────────
-models: opus 71% · sonnet 24% · haiku 5%
+在线 来源 ccusage  更新 14:30       电量 85%
 
-Stale state (bridge unreachable)
---------------------------------
-claude-code @ rlcd ~ $ status        ⚠ stale
-──────────────────────────────────────────
-last update: 14:23  (07m ago)
-< rest of screen frozen, dimmed >
+Carousel pages
+--------------
+1. CLAUDE + DEEPSEEK
+2. DEEPSEEK + CODEX
+3. CODEX + CLAUDE
 
-Secondary screen — multi-LLM (auto-rotate 30s, or button)
----------------------------------------------------------
-multi-llm today                      14:30
-──────────────────────────────────────────
-claude    382k tok    $9.14
-codex     124k tok    $0.31
-gemini    058k tok    $0.05
+CODEX panel uses the same rows as CLAUDE:
+top 3 models, then today / month / lifetime token and cost totals.
 
-──────────────────────────────────────────
-trend (24h)  ▁▂▂▄▅▇█▅▃▂▁▁▁▁▂▃▄▅▆▇█▆▄▂
+Stale state
+-----------
+If the bridge is unreachable, the lower panels keep the last good numbers.
+The status strip changes to:
+
+离线 来源 bridge  更新 --:--
+
+Pet page
+--------
+BOOT toggles a full-screen 184px pet animation page. Pet state comes from
+bridge `/api/pet/state` and `/api/usage.pet`.

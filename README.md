@@ -2,7 +2,7 @@
 
 [English](README.en.md)
 
-把你的 Claude（Pro/Max + API）和 DeepSeek 实时用量显示在 Waveshare ESP32-S3-RLCD-4.2 反射式 LCD 上的桌面摆件。
+把你的 Claude、Codex 和 DeepSeek 实时用量显示在 Waveshare ESP32-S3-RLCD-4.2 反射式 LCD 上的桌面摆件。
 
 ![实物效果图](device_photo.png)
 
@@ -14,30 +14,30 @@
          ▼
    bridge 守护进程                            ESP32-S3-RLCD-4.2
    ──────────────                            ─────────────────
-   • 调用 ccusage 解析会话日志               • 开机连接 Wi-Fi
-   • 从 Anthropic API 响应头获取             • 每 60 秒 GET /api/usage
-     真实的 5h/7d 窗口用量                   • 用 cJSON 解析 JSON
+   • 调用 ccusage 解析本地用量               • 开机连接 Wi-Fi
+   • 汇总 Claude / Codex 今日、本月、总量     • 每 60 秒 GET /api/usage
+                                             • 用 cJSON 解析 JSON
    • 获取 DeepSeek 账户余额                  • LVGL 双栏 UI：
-   • 获取室外天气（国内城市优先 CMA，免 key）    左栏 → Claude 用量 + 进度条
-   • 缓存结果，在 :7777 提供 JSON 服务          右栏 → DeepSeek 余额
+   • 获取室外天气（国内城市优先 CMA，免 key）    轮播 Claude / DeepSeek / Codex
+   • 接收 AI agent 生命周期事件驱动宠物动画      顶部小宠物 + 大动画页
+   • 缓存结果，在 :7777 提供 JSON 服务
                                              • 读取室内温湿度（SHTC3）
                                              • NTP 对时（CST-8）显示时间
 ```
 
-bridge 以 systemd `--user` 服务形式运行在与 Claude Code 同一台机器上。后台线程每 45 秒刷新一次 ccusage，使 ESP32 的 HTTP 请求始终从缓存秒返（ccusage 冷启动约需 10 秒）。真实的 5h/7d 用量由另一个 root systemd timer 每 3 分钟探测一次 Anthropic API，将结果写入共享 JSON 文件，bridge 读取该文件。
+bridge 以 systemd `--user` 服务形式运行在与 Claude Code / Codex 同一台机器上。后台线程每 45 秒刷新一次 ccusage，使 ESP32 的 HTTP 请求始终从缓存秒返（ccusage 冷启动约需 10 秒）。宠物状态由 `bridge/pet_hook.js` 接收各 agent 生命周期事件后合并进 `/api/usage`。
 
 ```
 14:30                            ☁  24°C
 IN 26.3°C  65%RH         SHENZHEN  Partly
 ──────────────────────────────────────────
  CLAUDE           │  DEEPSEEK
- 5h [████░░] 62%  │
- 7d [████░░] 41%  │      balance
- reset in 2h14m   │    ¥ 70.79
+ opus       12.9M │      可用
+ sonnet      4.4M│    ¥ 70.79
  ─────────────────│──────────────────────
- today   162k  $4.21│ granted      0.00
- month   8.4M   $187│ topped      70.79
- total  18.2M   $214│ today    2.4M tok
+ 今日   382K  $9.14│ 送值        0.00
+ 本月   8.4M   $187│ 充值       70.79
+ 合计  18.2M   $214│ 今日token 2.4M
 ```
 
 ## 硬件
@@ -210,14 +210,9 @@ RLCD_WEATHER_CMA=1         # 城市名优先使用中国气象局 CMA 数据；�
 RLCD_WEATHER_LAT=30.2741   # 坐标兜底纬度（默认杭州）
 RLCD_WEATHER_LON=120.1551  # 坐标兜底经度
 RLCD_WEATHER_CITY=杭州     # 天气城市；中文城市会返回 city_ascii 供固件显示
-RLCD_TOKEN_LIMIT=100M       # 固定 token 容量上限；支持 100M/1.5B/50000000
-RLCD_BLOCK_LIMIT_TOKENS=100M  # 可选：单独设置 5h 进度条上限
-RLCD_WEEKLY_LIMIT_TOKENS=100M # 可选：单独设置 7d/weekly 进度条上限
 # 坐标天气兜底：不设 key 时自动用 Open-Meteo；设置后坐标查询会用彩云天气
 CAIYUN_API_KEY=<彩云天气token>
 DEEPSEEK_API_KEY=sk-...    # 启用 DeepSeek 余额显示（可选）
-RLCD_WEEKLY_LIMIT_USD=100  # 你的周预算，设置后启用周进度条
-RLCD_BLOCK_LIMIT_USD=20    # 你的 5h 窗口预算，设置后启用 5h 进度条
 ```
 
 修改后重启服务：
@@ -232,26 +227,7 @@ systemctl --user restart rlcd-bridge
 openssl rand -hex 32
 ```
 
-### 第四步 — 获取真实 5h/7d 用量（可选，需要 root）
-
-Claude Code `/usage` 显示的窗口用量来自 `anthropic-ratelimit-unified-*` 响应头。需要 root 权限读取 `/root/.claude/.credentials.json` 中的 OAuth token，再调用 Anthropic API 并写入 `/run/rlcd/claude-limits.json`。一个 root systemd timer 每 3 分钟运行一次：
-
-```bash
-sudo install -m 0755 scripts/rlcd-claude-limits.py /usr/local/sbin/rlcd-claude-limits.py
-sudo cp scripts/rlcd-claude-limits.service scripts/rlcd-claude-limits.timer \
-       /etc/systemd/system/
-sudo systemctl enable --now rlcd-claude-limits.timer
-sudo systemctl status rlcd-claude-limits.timer
-```
-
-每次运行消耗一条 1-token Haiku 消息（费用极低）。若 OAuth token 失效，`limits.status` 变为 `stale`，设备继续显示上次有效数据。
-
-> Anthropic 不通过 API 公开 Pro/Max 套餐的 token 或金额上限。默认用 `RLCD_TOKEN_LIMIT=100M`
-> 作为固定容量上限计算进度条；也可用 `RLCD_BLOCK_LIMIT_TOKENS` / `RLCD_WEEKLY_LIMIT_TOKENS`
-> 分别调整 5h 与 7d/weekly 上限。若想按预算金额计算，仍可设置 `RLCD_WEEKLY_LIMIT_USD` /
-> `RLCD_BLOCK_LIMIT_USD`。
-
-### 第五步 — 编译并烧录固件
+### 第四步 — 编译并烧录固件
 
 #### 前置工具
 
@@ -291,11 +267,11 @@ idf.py build flash monitor
 
 首次编译会通过 IDF 组件管理器下载 `lvgl/lvgl@^9.4.0`（约 50 MB），需要联网。
 
-### 第六步 — 验证
+### 第五步 — 验证
 
 1. 串口监视器打印 `connecting to <ssid>...` → `got IP ...`，随后仪表盘填充数据。
 2. 建议先用 mock 模式：将 `RLCD_BRIDGE_URL` 改为 `.../api/usage?mock=1` 烧录，确认 UI 正常渲染。
-3. 切换回实时模式，跑一分钟 Claude Code，等下次轮询后观察 `active_block.tokens_used` 增长。
+3. 切换回实时模式，跑一分钟 Claude Code / Codex，等下次轮询后观察 `claude.today.tokens_used` 或 `other[].today.tokens_used` 增长。
 4. 停止 bridge 服务：UI 应显示 `(stale)` 但不崩溃，保持上次数据。
 
 ---
@@ -406,7 +382,6 @@ token-monitor-RLCD/
 	│   ├── sim.html               # RLCD 网页模拟器（/sim 路径）
 	│   ├── sources/
 	│   │   ├── claude_local.py    # ccusage 集成
-	│   │   ├── claude_limits.py   # 读取 /run/rlcd/claude-limits.json
 	│   │   ├── deepseek.py        # DeepSeek 余额 API
 	│   │   └── weather.py         # CMA 优先，Open-Meteo/Caiyun 坐标兜底
 	│   ├── assets/
@@ -428,8 +403,6 @@ token-monitor-RLCD/
 	│   ├── gen_icons.py          # 图标精灵表生成
 	│   ├── convert_clawd_to_rlcd_bw.py  # 彩色 GIF → 黑白 GIF 转换
 	│   ├── install-bridge-linux.sh           # systemd --user 安装脚本
-	│   ├── rlcd-claude-limits.py             # root 定时器：获取并写入限额 JSON
-	│   ├── rlcd-claude-limits.{service,timer}
 	│   └── vps-zt-mtu-fix.sh                 # ZeroTier MTU/MSS 修复
 	├── clawd-on-desk/            # Clawd 螃蟹角色上游参考项目（动画素材源）
 	├── rlcd-pet-zcode/           # ZCode 插件：将 AI agent 生命周期事件转发为动画触发
