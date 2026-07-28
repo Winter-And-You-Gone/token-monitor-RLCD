@@ -4,8 +4,6 @@
 
 A desktop ornament that shows your live Claude, Codex, and DeepSeek usage on a Waveshare ESP32-S3-RLCD-4.2 reflective-LCD board.
 
-![device photo](device_photo.png)
-
 ## How it works
 
 ```
@@ -47,7 +45,6 @@ IN 26.3°C  65%RH         SHENZHEN  Partly
 ## Hardware
 
 - [Waveshare ESP32-S3-RLCD-4.2](https://www.waveshare.com/wiki/ESP32-S3-RLCD-4.2) — 4.2" reflective LCD (paper-like), ESP32-S3, WiFi, RTC, temp/humidity, SD, audio.
-  - Buy in China: [Tmall listing](https://detail.tmall.com/item.htm?id=1010403328696)
 - USB-C cable for flashing.
 
 ## Architecture
@@ -135,7 +132,7 @@ ccusage --help
 ### Step 2 — Clone and test the bridge
 
 ```bash
-git clone https://github.com/CEJXXX/token-monitor-RLCD.git
+git clone https://github.com/Winter-And-You-Gone/token-monitor-RLCD.git
 cd token-monitor-RLCD/bridge
 
 uv sync                            # install Python deps (first time only)
@@ -377,41 +374,47 @@ The cleanest alternative is to set the ZeroTier network MTU to 1400 in ZeroTier 
 ```
 token-monitor-RLCD/
 ├── bridge/                    # Python FastAPI bridge daemon
-	│   ├── bridge.py              # main app + background refresh cache
-	│   ├── schema.py              # Pydantic response models
-	│   ├── pet_hook.js            # AI agent event → animation state mapper (single source of truth)
-	│   ├── sim.html               # RLCD web simulator (/sim route)
-	│   ├── sources/
-	│   │   ├── claude_local.py    # ccusage integration
-	│   │   ├── deepseek.py        # DeepSeek balance API
-	│   │   └── weather.py         # CMA first, Open-Meteo/Caiyun fallback
-	│   ├── assets/
-	│   │   ├── newgif/            # B/W GIF sources (scripts read these first)
-	│   │   └── clawd_rlcd/        # Scaled preview assets (size-56 / size-184)
-	│   └── pyproject.toml
+│   ├── bridge.py              # main app + background refresh cache
+│   ├── schema.py              # Pydantic response models
+│   ├── pet_hook.js            # AI agent event -> animation state mapper (single source of truth)
+│   ├── codex_hooks.json       # Codex hooks config source of truth
+│   ├── install_codex_hooks.py # Codex hooks idempotent installer
+│   ├── sim.html               # RLCD web simulator (/sim route)
+│   ├── sources/
+│   │   ├── claude_local.py    # ccusage integration
+│   │   ├── codexradar.py      # Codex Radar benchmark data source
+│   │   ├── deepseek.py        # DeepSeek balance API
+│   │   └── weather.py         # CMA first, Open-Meteo/Caiyun fallback
+│   ├── assets/
+│   │   ├── newgif/            # B/W GIF sources (scripts read these first)
+│   │   └── clawd_rlcd/        # Scaled preview assets (size-56 / size-184)
+│   └── pyproject.toml
 ├── firmware/                  # ESP-IDF v5 + LVGL v9 project
 │   ├── main/
-│   │   ├── secrets.h.example  # → copy to secrets.h (git-ignored)
+│   │   ├── secrets.h.example  # -> copy to secrets.h (git-ignored)
 │   │   └── user_config.h      # pin assignments (from vendor BSP)
 │   └── components/
 │       ├── net_app/           # WiFi STA + NTP (CST-8)
 │       ├── sensor/            # SHTC3 temp/humidity
 │       ├── usage_client/      # HTTP poll + cJSON parse
-│       └── ui_app/            # LVGL two-column dashboard + icons
+│       └── ui_app/            # LVGL dashboard + radar page + pet animation
 ├── scripts/
-	│   ├── gen_pet_anim.py           # 56px pet animation frame table generator
-	│   ├── gen_pet_big_anim.py       # 184px big pet animation frame table generator
-	│   ├── gen_icons.py              # Icon sprite sheet generator
-	│   ├── convert_clawd_to_rlcd_bw.py   # Color GIF → B/W GIF converter
-	│   ├── install-bridge-linux.sh          # systemd --user installer
-	│   └── vps-zt-mtu-fix.sh                # ZeroTier MTU/MSS fix
-	├── clawd-on-desk/            # Clawd crab reference project (upstream animation source)
-	├── rlcd-pet-zcode/           # ZCode plugin: forwards AI agent lifecycle events as animation triggers
-	├── docs/
-	│   ├── mockup.png            # UI reference mockup
-	│   └── TOOLCHAIN.md          # AI agent toolchain path guide
-	├── AGENTS.md                 # AI agent project rules entry point
-	└── device_photo.png
+│   ├── gen_pet_anim.py        # 56px pet animation frame table generator
+│   ├── gen_pet_big_anim.py    # 184px big pet animation frame table generator
+│   ├── gen_icons.py           # Icon sprite sheet generator
+│   ├── convert_clawd_to_rlcd_bw.py  # Color GIF -> B/W GIF converter
+│   ├── install-bridge-linux.sh      # systemd --user installer
+│   └── vps-zt-mtu-fix.sh           # ZeroTier MTU/MSS fix
+├── rlcd-pet-zcode/            # ZCode plugin: lifecycle events -> animation triggers
+├── rlcd-pet-opencode/         # OpenCode plugin: same as above
+├── clawd-on-desk/             # Clawd crab reference project (local only, not committed)
+├── docs/
+│   ├── TOOLCHAIN.md           # Toolchain path guide
+│   ├── mockup.py              # UI mockup generator script
+│   └── ui-mockup.txt          # UI mockup text draft
+├── AGENTS.md                  # AI agent project rules entry point
+├── CONTEXT.md                 # Project glossary
+└── .gitattributes             # Line ending normalization (LF)
 ```
 
 ## License

@@ -4,8 +4,6 @@
 
 把你的 Claude、Codex 和 DeepSeek 实时用量显示在 Waveshare ESP32-S3-RLCD-4.2 反射式 LCD 上的桌面摆件。
 
-![实物效果图](device_photo.png)
-
 ## 实现逻辑
 
 ```
@@ -43,7 +41,6 @@ IN 26.3°C  65%RH         SHENZHEN  Partly
 ## 硬件
 
 - [Waveshare ESP32-S3-RLCD-4.2](https://www.waveshare.com/wiki/ESP32-S3-RLCD-4.2) — 4.2 英寸反射式 LCD（类纸面），ESP32-S3，Wi-Fi，RTC，温湿度，SD，音频。
-  - 国内购买：[天猫链接](https://detail.tmall.com/item.htm?id=1010403328696)
 - USB-C 数据线（用于烧录）。
 
 ## 架构
@@ -131,7 +128,7 @@ ccusage --help
 ### 第二步 — 克隆并本地测试 bridge
 
 ```bash
-git clone https://github.com/CEJXXX/token-monitor-RLCD.git
+git clone https://github.com/Winter-And-You-Gone/token-monitor-RLCD.git
 cd token-monitor-RLCD/bridge
 
 uv sync                            # 安装 Python 依赖（首次）
@@ -148,9 +145,6 @@ curl 'http://localhost:7777/api/usage?mock=1' | jq # 模拟数据（不依赖 cc
 浏览器打开 `http://localhost:7777/sim` 可以直接使用本机 RLCD 模拟器。它会走同一个 `/api/usage`
 接口，支持 mock/live、token、自动刷新和 stale/offline 状态。
 
-> 本地补充素材 / 参考项目：如果模拟器或宠物动画提示缺少 Clawd 资源、vendor demo、
-> 图标源文件等，当前开发机上的这些缺失内容统一放在 `X:\ESP`，从那里拷贝或同步到
-> 本仓库对应目录即可。
 
 ### 第三步 — 安装为 systemd 服务
 
@@ -376,41 +370,47 @@ sudo systemctl enable --now rlcd-zt-fix.service   # 开机自动生效
 ```
 token-monitor-RLCD/
 ├── bridge/                    # Python FastAPI bridge 守护进程
-	│   ├── bridge.py              # 主程序 + 后台刷新缓存
-	│   ├── schema.py              # Pydantic 响应模型
-	│   ├── pet_hook.js            # AI agent 事件→动画状态映射（单一真相源）
-	│   ├── sim.html               # RLCD 网页模拟器（/sim 路径）
-	│   ├── sources/
-	│   │   ├── claude_local.py    # ccusage 集成
-	│   │   ├── deepseek.py        # DeepSeek 余额 API
-	│   │   └── weather.py         # CMA 优先，Open-Meteo/Caiyun 坐标兜底
-	│   ├── assets/
-	│   │   ├── newgif/            # 黑白 GIF 素材（生成脚本优先读取）
-	│   │   └── clawd_rlcd/        # 缩放版预览素材（size-56 / size-184）
-	│   └── pyproject.toml
+│   ├── bridge.py              # 主程序 + 后台刷新缓存
+│   ├── schema.py              # Pydantic 响应模型
+│   ├── pet_hook.js            # AI agent 事件->动画状态映射（单一真相源）
+│   ├── codex_hooks.json       # Codex hooks 配置真相源
+│   ├── install_codex_hooks.py # Codex hooks 幂等安装脚本
+│   ├── sim.html               # RLCD 网页模拟器（/sim 路径）
+│   ├── sources/
+│   │   ├── claude_local.py    # ccusage 集成
+│   │   ├── codexradar.py      # Codex Radar 基准测试数据源
+│   │   ├── deepseek.py        # DeepSeek 余额 API
+│   │   └── weather.py         # CMA 优先，Open-Meteo/Caiyun 坐标兜底
+│   ├── assets/
+│   │   ├── newgif/            # 黑白 GIF 素材（生成脚本优先读取）
+│   │   └── clawd_rlcd/        # 缩放版预览素材（size-56 / size-184）
+│   └── pyproject.toml
 ├── firmware/                  # ESP-IDF v5 + LVGL v9 项目
 │   ├── main/
-│   │   ├── secrets.h.example  # → 复制为 secrets.h（已 gitignore）
+│   │   ├── secrets.h.example  # -> 复制为 secrets.h（已 gitignore）
 │   │   └── user_config.h      # 引脚定义（来自厂商 BSP）
 │   └── components/
 │       ├── net_app/           # Wi-Fi STA + NTP（CST-8）
 │       ├── sensor/            # SHTC3 温湿度驱动
 │       ├── usage_client/      # HTTP 轮询 + cJSON 解析
-│       └── ui_app/            # LVGL 双栏仪表盘 + 图标
+│       └── ui_app/            # LVGL 双栏仪表盘 + 雷达页 + 宠物动画
 ├── scripts/
-	│   ├── gen_pet_anim.py       # 从 GIF 生成 56px 宠物动画帧表
-	│   ├── gen_pet_big_anim.py   # 从 GIF 生成 184px 大宠物动画帧表
-	│   ├── gen_icons.py          # 图标精灵表生成
-	│   ├── convert_clawd_to_rlcd_bw.py  # 彩色 GIF → 黑白 GIF 转换
-	│   ├── install-bridge-linux.sh           # systemd --user 安装脚本
-	│   └── vps-zt-mtu-fix.sh                 # ZeroTier MTU/MSS 修复
-	├── clawd-on-desk/            # Clawd 螃蟹角色上游参考项目（动画素材源）
-	├── rlcd-pet-zcode/           # ZCode 插件：将 AI agent 生命周期事件转发为动画触发
-	├── docs/
-	│   ├── mockup.png            # UI 参考原型图
-	│   └── TOOLCHAIN.md          # AI agent 工具链路径指引
-	├── AGENTS.md                 # AI agent 项目规则入口
-	└── device_photo.png
+│   ├── gen_pet_anim.py        # 从 GIF 生成 56px 宠物动画帧表
+│   ├── gen_pet_big_anim.py    # 从 GIF 生成 184px 大宠物动画帧表
+│   ├── gen_icons.py           # 图标精灵表生成
+│   ├── convert_clawd_to_rlcd_bw.py  # 彩色 GIF -> 黑白 GIF 转换
+│   ├── install-bridge-linux.sh      # systemd --user 安装脚本
+│   └── vps-zt-mtu-fix.sh           # ZeroTier MTU/MSS 修复
+├── rlcd-pet-zcode/            # ZCode 插件：生命周期事件 -> 动画触发
+├── rlcd-pet-opencode/         # OpenCode 插件：同上
+├── clawd-on-desk/             # Clawd 螃蟹角色上游参考（本地保留，未提交）
+├── docs/
+│   ├── TOOLCHAIN.md           # 工具链路径指引
+│   ├── mockup.py              # UI mockup 生成脚本
+│   └── ui-mockup.txt          # UI mockup 文本稿
+├── AGENTS.md                  # AI agent 项目规则入口
+├── CONTEXT.md                 # 项目术语表
+└── .gitattributes             # 行尾规范化（LF）
 ```
 
 ## 许可证
