@@ -29,18 +29,15 @@ ESP32's HTTP request always returns instantly from cache (a cold ccusage run
 takes ~10 s). Pet state is updated by `bridge/pet_hook.js`, which receives
 agent lifecycle events and folds the current animation state into `/api/usage`.
 
-```
-14:30                            ☁  24°C
-IN 26.3°C  65%RH         SHENZHEN  Partly
-──────────────────────────────────────────
- CLAUDE           │ DEEPSEEK         │ CODEX
- opus   12.9M     │ balance          │ o3     8.2M
- sonnet  4.4M     │ ¥ 70.79         │ gpt-4o 3.1M
- ──────────────── │ ──────────────── │ ────────────────
- today 382K $9.14 │ granted   0.00   │ today 1.2M $3.20
- month 8.4M $187  │ topped   70.79   │ month  28M $76
- total 18.2M $214 │ today    2.4M    │ total  52M $142
-```
+**14:30　☁ 24°C　IN 26.3°C 65%RH　SHENZHEN Partly**
+
+| CLAUDE | DEEPSEEK | CODEX |
+|--------|----------|-------|
+| opus 12.9M | balance | o3 8.2M |
+| sonnet 4.4M | ¥ 70.79 | gpt-4o 3.1M |
+| today 382K $9.14 | granted 0.00 | today 1.2M $3.20 |
+| month 8.4M $187 | topped 70.79 | month 28M $76 |
+| total 18.2M $214 | today 2.4M | total 52M $142 |
 
 ## Pages
 
