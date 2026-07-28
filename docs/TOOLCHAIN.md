@@ -21,7 +21,7 @@ AI agent 入口规则见 [`../AGENTS.md`](../AGENTS.md)。
 | `IDF_PYTHON_ENV_PATH` | `X:\ESP\python_env\idf5.5_py3.12_env` |
 
 最简单的做法是 `call %IDF_PATH%\export.bat`（cmd）或 `. $env:IDF_PATH\export.ps1`（PowerShell），
-它会自动把下面所有工具拼进 PATH 并校验。项目脚本 `build_flash.bat` / `build_flash.ps1` 就是这么做的。
+它会自动把下面所有工具拼进 PATH 并校验。（但本机 export.bat 走不通，见下。）
 
 ### 1.2 工具二进制路径（不用 export 时的绝对路径）
 
@@ -42,7 +42,7 @@ AI agent 入口规则见 [`../AGENTS.md`](../AGENTS.md)。
 | esp-clang-libs | `X:\ESP\tools\esp-clang-libs\esp-19.1.2_20250312` | 19.1.2 |
 | OpenOCD（JTAG 调试，可选） | `X:\ESP\tools\openocd-esp32\v0.12.0-esp32-20250707\openocd-esp32\bin` | 0.12.0-esp32 |
 
-> ⚠️ **`build_flash.bat` / `build_flash.ps1` 在本机都走不通 `export.bat`**：
+> ⚠️ **本机 `export.bat` 走不通**：
 > `X:\ESP` 的工具链由 EIM 安装，但**没装 GDB**（`xtensa-esp-elf-gdb`、`riscv32-esp-elf-gdb`）、
 > `idf-exe`、`esp-rom-elfs`。`export.bat` 会严格校验这些工具，缺失就拒绝激活
 > （报 `tool ... has no installed versions`）。编译 esp32s3 其实用不到 GDB（那是调试器），
@@ -52,7 +52,6 @@ AI agent 入口规则见 [`../AGENTS.md`](../AGENTS.md)。
 > `export.bat` 第 2 行 `if defined MSYSTEM` 会直接拒绝（"This .bat file is for Windows CMD.EXE shell only."）。
 >
 > **实测可用的编译方式：手动拼 PATH，绕过 export.bat**（见下面 1.3 节的可靠方法）。
-> `build_flash.ps1` 的版本号也已过时（见 git 历史），即便 PATH 拼对也建议用 1.3 的方法。
 
 ### 1.3 编译固件（本机可靠方法）
 
@@ -71,7 +70,7 @@ cd /d "X:\ESP32-S3 RLCD\token-monitor-RLCD\firmware"
 
 - `ESP_ROM_ELF_DIR` 未定义的 gdbinit 警告可忽略（只影响 GDB 调试符号，不阻碍编译/链接）。
 - 全量编译约 1500 个目标，首次 3-5 分钟；增量很快。
-- 旧 `build\CMakeCache.txt` 若被 `build_flash.bat` 删过，会触发完整重配（含 bootloader 子项目）。
+- 若 `build\CMakeCache.txt` 不存在或被清理过，会触发完整重配（含 bootloader 子项目）。
 
 ### 1.4 串口 / 烧录
 

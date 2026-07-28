@@ -44,3 +44,13 @@ ESP32-S3-RLCD-4.2-Demo.zip
 
 # Uploaded photos / scratch
 [0-9a-f][0-9a-f][0-9a-f][0-9a-f]*.jpg
+
+# Product/device photos (not code assets)
+/device_photo.png
+/使用产品.png
+
+# Generated gif frame archives (intermediate; gen scripts read .gif not .zip)
+bridge/assets/newgif/*-frames.zip
+
+# QA contact sheets (generated)
+bridge/assets/clawd_rlcd/**/contact_sheet.png

@@ -36,12 +36,9 @@
   - 备用：`C:\Users\Winter\AppData\Roaming\Python\Scripts\uv.exe`
 - bridge 目录 `bridge/` 下有 `pyproject.toml` + `uv.lock`，进入后用 `uv sync` 装依赖、`uv run` 执行。
 
-## 一键脚本（⚠️ 本机走不通 export.bat，见下）
+## 编译与烧录
 
-项目根目录有两个脚本，但**都不能直接用**：
-
-- `build_flash.bat` — 走 `export.bat`，但 `X:\ESP` 缺 GDB/idf-exe/esp-rom-elfs，export 严格校验失败；从 git-bash 调还会被 `MSYSTEM` 检测拦掉。
-- `build_flash.ps1` — 手动拼 PATH，思路对，但版本号过时且只 build 不 flash。
+> ⚠️ 本机 `export.bat` 走不通（`X:\ESP` 缺 GDB/idf-exe/esp-rom-elfs，严格校验失败），所以用下面手动 PATH 的方法。
 
 **编译固件用 `docs/TOOLCHAIN.md` 1.3 节的手动 PATH 方法**（纯 cmd 跑，已验证可用）。
 **烧录用 esptool 直烧**（COM11，见 `docs/TOOLCHAIN.md` 1.4 节）：
@@ -101,7 +98,11 @@ uv run pytest           :: 跑测试
 5. 烧录是物理设备操作，确认串口号（COMx）再执行，不要瞎试端口。
 6. **更新 gif 动画时**：`newgif/` 里的新 gif → 复制到 `size-56/gifs/` **和** `size-184/gifs/`（两个目录都要同步，上次就漏了 size-184） + 确认生成脚本优先读 `newgif/` + 重跑两个生成脚本 + 重新编译烧录。**不要动 `clawd-on-desk/` 里的 gif。**
 7. **zcode 动画触发**：已通过项目根的 `rlcd-pet-zcode/` 插件接入（不走 settings.json hooks，而是 zcode 的 `plugins.dirs` 机制）。该插件的 `hooks/run-hook.cmd` 把 zcode 生命周期事件转发给 `bridge/pet_hook.js --agent zcode`——**事件→状态映射的单一真相源是 `pet_hook.js`**，改映射改它一处即可。zcode 与 Claude/Codex 并发时会自动走 working tier 分档（`sessions>=2` → `headphones-groove`）。启用/卸载步骤见 `rlcd-pet-zcode/README.md`。
-8. **不要在 cmd.exe 命令里用 `>nul` / `2>nul`**——Git Bash 把它当成文件重定向，会在当前目录创建名为 `nul` 的文件，污染工作区。替代方法：用 Python 捕获输出来抑制，或用 `>NUL`（全大写）让 cmd 自己处理。
+8. **codex 动画触发**：codex 状态有**两条路径**，改映射必须同步两处：
+   - **主路径（JSONL monitor，不依赖 hooks）**：`bridge/bridge.py` 的 `CODEX_JSONL_EVENT_STATES` 直接轮询 `~/.codex/sessions/` 下的 rollout jsonl，映射 `function_call`/`custom_tool_call`->working、`user_message`->thinking、`task_complete`->idle、`context_compacted`->sweeping。Clawd on Desk 周期性重写 `~/.codex/hooks.json` 会破坏 codex 的 `trusted_hash` 导致 hooks 静默失效，所以这条是可靠主路径。
+   - **备用路径（hooks）**：`bridge/pet_hook.js` 的 `CODEX_EVENT_TO_STATE` 经 `~/.codex/hooks.json` 触发（codex 重启 approve 后生效）。项目独立的 hooks 真相源是 `bridge/codex_hooks.json`，用 `python bridge/install_codex_hooks.py` 幂等合并到 `~/.codex/hooks.json`（保留 Clawd 等其他消费者）。Clawd 重写后重跑安装脚本 + 重启 codex approve。
+   - ⚠️ **改 codex 事件->状态映射时**：`CODEX_JSONL_EVENT_STATES`（bridge.py）和 `CODEX_EVENT_TO_STATE`（pet_hook.js）两处必须同步，否则两条路径行为不一致。两条路径幂等共存（都发相同 state，不冲突）。
+9. **不要在 cmd.exe 命令里用 `>nul` / `2>nul`**——Git Bash 把它当成文件重定向，会在当前目录创建名为 `nul` 的文件，污染工作区。替代方法：用 Python 捕获输出来抑制，或用 `>NUL`（全大写）让 cmd 自己处理。
 
 ## 当工具链找不到时
 

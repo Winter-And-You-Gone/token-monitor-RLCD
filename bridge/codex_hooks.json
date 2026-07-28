@@ -1,0 +1,103 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "command": "& \"F:\\Node\\node.exe\" \"X:/ESP32-S3 RLCD/token-monitor-RLCD/bridge/pet_hook.js\" SessionStart --agent codex",
+            "timeout": 5,
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "command": "& \"F:\\Node\\node.exe\" \"X:/ESP32-S3 RLCD/token-monitor-RLCD/bridge/pet_hook.js\" UserPromptSubmit --agent codex",
+            "timeout": 5,
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "& \"F:\\Node\\node.exe\" \"X:/ESP32-S3 RLCD/token-monitor-RLCD/bridge/pet_hook.js\" PreToolUse --agent codex",
+            "timeout": 5,
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "command": "& \"F:\\Node\\node.exe\" \"X:/ESP32-S3 RLCD/token-monitor-RLCD/bridge/pet_hook.js\" PermissionRequest --agent codex",
+            "timeout": 600,
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "& \"F:\\Node\\node.exe\" \"X:/ESP32-S3 RLCD/token-monitor-RLCD/bridge/pet_hook.js\" PostToolUse --agent codex",
+            "timeout": 5,
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "command": "& \"F:\\Node\\node.exe\" \"X:/ESP32-S3 RLCD/token-monitor-RLCD/bridge/pet_hook.js\" Stop --agent codex",
+            "timeout": 5,
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "command": "& \"F:\\Node\\node.exe\" \"X:/ESP32-S3 RLCD/token-monitor-RLCD/bridge/pet_hook.js\" Notification --agent codex",
+            "timeout": 5,
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "command": "& \"F:\\Node\\node.exe\" \"X:/ESP32-S3 RLCD/token-monitor-RLCD/bridge/pet_hook.js\" SubagentStart --agent codex",
+            "timeout": 5,
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "command": "& \"F:\\Node\\node.exe\" \"X:/ESP32-S3 RLCD/token-monitor-RLCD/bridge/pet_hook.js\" SubagentStop --agent codex",
+            "timeout": 5,
+            "type": "command"
+          }
+        ]
+      }
+    ]
+  }
+}

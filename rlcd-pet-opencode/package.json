@@ -1,0 +1,8 @@
+{
+  "name": "rlcd-pet-opencode",
+  "version": "0.1.0",
+  "description": "RLCD pet state plugin for opencode - forwards session/tool events to the bridge",
+  "type": "module",
+  "main": "index.mjs",
+  "private": true
+}
