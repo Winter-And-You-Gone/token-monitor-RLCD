@@ -1,0 +1,2 @@
+# Normalize line endings: all text files use LF in repo and working tree
+* text=auto eol=lf
