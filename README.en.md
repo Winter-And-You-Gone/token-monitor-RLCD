@@ -35,11 +35,11 @@ IN 26.3°C  65%RH         SHENZHEN  Partly
 ──────────────────────────────────────────
  CLAUDE           │  DEEPSEEK
  opus       12.9M │      balance
- sonnet      4.4M│    ¥ 70.79
+ sonnet      4.4M │    ¥ 70.79
  ─────────────────│──────────────────────
- today   162k  $4.21│ granted      0.00
- month   8.4M   $187│ topped      70.79
- total  18.2M   $214│ today    2.4M tok
+ today   382K  $9.14│ granted      0.00
+ month   8.4M   $187│ topped       70.79
+ total  18.2M   $214│ today tokens 2.4M
 ```
 
 ## Pages
