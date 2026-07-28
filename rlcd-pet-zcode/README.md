@@ -16,6 +16,7 @@ zcode 触发的 hook 事件经 `run-hook.cmd` 转发到 `pet_hook.js --agent zco
 | `UserPromptSubmit` | `thinking` | 用户提交 prompt,摆件思考 |
 | `PreToolUse` | `working` | 工具调用前,摆件工作 |
 | `PostToolUse` | `working` | 工具调用后,保持工作 |
+| `PostToolUseFailure` | `error` | 工具调用失败,摆件报错 |
 | `Stop` | `attention` | 回合结束,摆件提示 |
 | `PermissionRequest` | `notification` | 权限请求,摆件通知 |
 
