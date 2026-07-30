@@ -13,3 +13,13 @@ extern const lv_image_dsc_t icon_wx_fog;
 extern const lv_image_dsc_t icon_sun;
 extern const lv_image_dsc_t icon_moon;
 extern const lv_image_dsc_t icon_earth;
+/* sun animation frames (generated) */
+extern const lv_image_dsc_t *icon_sun_anim[];
+extern const int icon_sun_anim_count;
+/* moon body rim and animation frames (generated) */
+extern const lv_image_dsc_t icon_moon_rim;
+extern const lv_image_dsc_t *icon_moon_anim[];
+extern const int icon_moon_anim_count;
+/* earth animation frames (generated) */
+extern const lv_image_dsc_t *icon_earth_anim[];
+extern const int icon_earth_anim_count;

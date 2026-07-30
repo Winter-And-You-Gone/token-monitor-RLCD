@@ -86,6 +86,17 @@ static lv_obj_t *lbl_time, *lbl_indoor, *img_pet, *img_pet_eyes, *img_wx, *lbl_w
 static lv_obj_t *lbl_battery_title, *lbl_battery_pct, *battery_body, *battery_fill, *battery_tip;
 static lv_obj_t *pet_big_page, *img_pet_big, *img_pet_big_eyes;
 static lv_obj_t *img_radar_pet = NULL;
+static lv_obj_t *img_sun_anim = NULL;
+static lv_timer_t *sun_anim_timer = NULL;
+static uint16_t sun_anim_frame = 0;
+static lv_obj_t *img_moon_body = NULL;
+static lv_obj_t *img_moon_rim = NULL;
+static lv_obj_t *img_moon_anim = NULL;
+static lv_timer_t *moon_anim_timer = NULL;
+static uint16_t moon_anim_frame = 0;
+static lv_obj_t *img_earth_anim = NULL;
+static lv_timer_t *earth_anim_timer = NULL;
+static uint16_t earth_anim_frame = 0;
 static lv_obj_t *radar_page, *lbl_radar_updated;
 static radar_cell_t radar_cells[3][3];
 static page_kind_t g_current_page = PAGE_TOKEN;
@@ -197,6 +208,16 @@ static lv_obj_t *mkbattery_body(lv_obj_t *p, int x, int y, int w, int h)
     lv_obj_set_style_border_color(o, INK, 0);
     lv_obj_set_style_border_width(o, 1, 0);
     lv_obj_set_style_radius(o, 0, 0);
+    return o;
+}
+
+static lv_obj_t *mkmoon_body(lv_obj_t *p, int x, int y)
+{
+    lv_obj_t *o = mkbare(p, x, y, 48, 48);
+    lv_obj_set_style_bg_color(o, WHITE, 0);
+    lv_obj_set_style_bg_opa(o, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(o, 0, 0);
+    lv_obj_set_style_radius(o, 24, 0);
     return o;
 }
 
@@ -493,11 +514,26 @@ static void mk_radar_page(lv_obj_t *screen)
         mkalign(radar_page, col_x[i], 30, col_w, LV_TEXT_ALIGN_CENTER, &font_amt14, efforts[i]);
 
     static const lv_image_dsc_t *model_icons[3] = {&icon_sun, &icon_earth, &icon_moon};
+    static const char *model_names[3] = {"Sol", "Terra", "Luna"};
     static const int row_y[3] = {48, 124, 200};
     static const int row_h = 72;
 
     for (int m = 0; m < 3; ++m) {
-        mkicon(radar_page, 4, row_y[m] + 12, model_icons[m]);
+        mkalign(radar_page, 4, row_y[m] - 4, 48, LV_TEXT_ALIGN_CENTER, &font_amt14, model_names[m]);
+        if (m == 0 && icon_sun_anim_count > 0) {
+            /* Sol: animated sun (rotate+pulse) */
+            img_sun_anim = mkicon(radar_page, 4, row_y[m] + 12, icon_sun_anim[0]);
+        } else if (m == 2 && icon_moon_anim_count > 0) {
+            /* Luna: white body with black phase/crater overlay */
+            img_moon_body = mkmoon_body(radar_page, 4, row_y[m] + 12);
+            img_moon_rim = mkicon(radar_page, 4, row_y[m] + 12, &icon_moon_rim);
+            img_moon_anim = mkicon(radar_page, 4, row_y[m] + 12, icon_moon_anim[0]);
+        } else if (m == 1 && icon_earth_anim_count > 0) {
+            /* Terra: geographic west-to-east rotation */
+            img_earth_anim = mkicon(radar_page, 4, row_y[m] + 12, icon_earth_anim[0]);
+        } else {
+            mkicon(radar_page, 4, row_y[m] + 12, model_icons[m]);
+        }
         for (int e = 0; e < 3; ++e)
             mk_radar_cell(radar_page, col_x[e], row_y[m], col_w, row_h, &radar_cells[m][e]);
     }
@@ -539,6 +575,30 @@ static void radar_timer_cb(lv_timer_t *timer)
     snprintf(buf, sizeof(buf), "实时 更新于 %02d/%02d %02d:%02d  %d:%02d 后刷新",
              t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min, min, sec);
     lv_label_set_text(lbl_radar_updated, buf);
+}
+
+static void sun_anim_timer_cb(lv_timer_t *timer)
+{
+    (void) timer;
+    if (!img_sun_anim || icon_sun_anim_count <= 0) return;
+    sun_anim_frame = (uint16_t)((sun_anim_frame + 1) % icon_sun_anim_count);
+    lv_image_set_src(img_sun_anim, icon_sun_anim[sun_anim_frame]);
+}
+
+static void moon_anim_timer_cb(lv_timer_t *timer)
+{
+    (void) timer;
+    if (!img_moon_anim || icon_moon_anim_count <= 0) return;
+    moon_anim_frame = (uint16_t)((moon_anim_frame + 1) % icon_moon_anim_count);
+    lv_image_set_src(img_moon_anim, icon_moon_anim[moon_anim_frame]);
+}
+
+static void earth_anim_timer_cb(lv_timer_t *timer)
+{
+    (void) timer;
+    if (!img_earth_anim || icon_earth_anim_count <= 0) return;
+    earth_anim_frame = (uint16_t)((earth_anim_frame + 1) % icon_earth_anim_count);
+    lv_image_set_src(img_earth_anim, icon_earth_anim[earth_anim_frame]);
 }
 
 void ui_app_init(void)
@@ -603,6 +663,12 @@ void ui_app_init(void)
     pet_timer = lv_timer_create(pet_timer_cb, PET_TIMER_MS, NULL);
     if (radar_timer) lv_timer_del(radar_timer);
     radar_timer = lv_timer_create(radar_timer_cb, 1000, NULL);
+    if (sun_anim_timer) lv_timer_del(sun_anim_timer);
+    sun_anim_timer = lv_timer_create(sun_anim_timer_cb, 150, NULL);
+    if (moon_anim_timer) lv_timer_del(moon_anim_timer);
+    moon_anim_timer = lv_timer_create(moon_anim_timer_cb, 300, NULL);
+    if (earth_anim_timer) lv_timer_del(earth_anim_timer);
+    earth_anim_timer = lv_timer_create(earth_anim_timer_cb, 250, NULL);
     have_data = false;
     logged_first_report = false;
     ESP_LOGI(TAG, "UI build marker UI v14, model_col=112, token_col=60, pet_eye_knockout=1, carousel=30fps-fast, pet_art=crab-focus, battery=1, pet_big_page=1, pet_big_size=184, radar_page=1, pages=3");
