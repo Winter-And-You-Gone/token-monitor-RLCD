@@ -20,7 +20,6 @@ typedef struct {
 } battery_status_t;
 
 esp_err_t battery_init(void);
-esp_err_t battery_read(float *voltage_v, int *percent);
 esp_err_t battery_read_status(battery_status_t *status);
 
 #ifdef __cplusplus

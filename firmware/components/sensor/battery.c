@@ -89,16 +89,6 @@ esp_err_t battery_init(void)
     return ESP_OK;
 }
 
-esp_err_t battery_read(float *voltage_v, int *percent)
-{
-    battery_status_t status = {};
-    esp_err_t err = battery_read_status(&status);
-    if (err != ESP_OK) return err;
-    if (voltage_v) *voltage_v = status.voltage_v;
-    if (percent) *percent = status.percent;
-    return ESP_OK;
-}
-
 esp_err_t battery_read_status(battery_status_t *status)
 {
     if (!s_ready) {
