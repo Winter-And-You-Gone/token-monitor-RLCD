@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-16"?>
+<!--
+  RLCD bridge scheduled-task template (Windows).
+  Register via scripts/install-bridge-windows.ps1 -- it substitutes the
+  placeholders below with the current user and repo path, then registers
+  the task. Do NOT register this file directly with schtasks.
+-->
+<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Description>RLCD bridge daemon: serves Claude/DeepSeek usage JSON to the ESP32-S3-RLCD device on :7777. Restart on failure.</Description>
+    <URI>\RLCD-Bridge</URI>
+  </RegistrationInfo>
+  <Triggers>
+    <LogonTrigger>
+      <Enabled>true</Enabled>
+    </LogonTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author">
+      <UserId>${USER}</UserId>
+      <LogonType>Interactive</LogonType>
+      <RunLevel>LeastPrivilege</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+    <IdleSettings>
+      <StopOnIdleEnd>false</StopOnIdleEnd>
+      <RestartOnIdle>false</RestartOnIdle>
+    </IdleSettings>
+    <AllowStartOnDemand>true</AllowStartOnDemand>
+    <Enabled>true</Enabled>
+    <Hidden>false</Hidden>
+    <RunOnlyIfIdle>false</RunOnlyIfIdle>
+    <WakeToRun>false</WakeToRun>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <Priority>7</Priority>
+    <RestartOnFailure>
+      <Interval>PT1M</Interval>
+      <Count>999</Count>
+    </RestartOnFailure>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>wscript.exe</Command>
+      <Arguments>"${REPO_ROOT}\scripts\run-bridge-hidden.vbs"</Arguments>
+      <WorkingDirectory>${REPO_ROOT}\bridge</WorkingDirectory>
+    </Exec>
+  </Actions>
+</Task>
