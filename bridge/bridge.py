@@ -1580,7 +1580,18 @@ def get_usage(
 
 
 def main():
+    import sys
     import uvicorn
+
+    # Under pythonw.exe (Task Scheduler has no console), sys.stdout/stderr are
+    # None and uvicorn's StreamHandler crashes on first log write. Redirect to
+    # files so the daemon survives and leaves a trail; noop when stdout exists.
+    if sys.stdout is None or sys.stderr is None:
+        _log_dir = Path(__file__).resolve().parent
+        if sys.stdout is None:
+            sys.stdout = open(_log_dir / "bridge-server.out.log", "a", encoding="utf-8")
+        if sys.stderr is None:
+            sys.stderr = open(_log_dir / "bridge-server.err.log", "a", encoding="utf-8")
 
     host = _validated_bind_host()
     port = int(os.environ.get("RLCD_PORT", "7777"))
