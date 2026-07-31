@@ -255,7 +255,14 @@ def _execute_ccusage_uncached(effective_args: list[str], timeout: int) -> dict[s
     base_cmd = _resolve_ccusage_command()
     cmd = base_cmd + effective_args
     env = _subprocess_env_without_proxy()
-    creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
+    creationflags = 0
+    if os.name == "nt":
+        # CREATE_NO_WINDOW (0x08000000) prevents ccusage (a node .cmd wrapper)
+        # from flashing a console window every refresh under pythonw; combine
+        # with CREATE_NEW_PROCESS_GROUP so Ctrl-C / taskkill /T stays scoped.
+        creationflags = (
+            subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+        )
     LOG.info(
         "ccusage starting local command=%s args=%s timeout=%ss",
         _command_label(base_cmd),
@@ -295,6 +302,7 @@ def _kill_process_tree(proc: subprocess.Popen[str]) -> None:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             check=False,
+            creationflags=subprocess.CREATE_NO_WINDOW,
         )
         return
     proc.kill()
