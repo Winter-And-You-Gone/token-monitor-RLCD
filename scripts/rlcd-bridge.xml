@@ -2,8 +2,8 @@
 <!--
   RLCD bridge scheduled-task template (Windows).
   Register via scripts/install-bridge-windows.ps1 -- it substitutes the
-  placeholders below with the current user and repo path, then registers
-  the task. Do NOT register this file directly with schtasks.
+  placeholders below with the current user, repo path, and uv.exe path,
+  then registers the task. Do NOT register this file directly with schtasks.
 -->
 <Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
@@ -47,8 +47,8 @@
   </Settings>
   <Actions Context="Author">
     <Exec>
-      <Command>wscript.exe</Command>
-      <Arguments>"${REPO_ROOT}\scripts\run-bridge-hidden.vbs"</Arguments>
+      <Command>${UV_EXE}</Command>
+      <Arguments>run python bridge.py</Arguments>
       <WorkingDirectory>${REPO_ROOT}\bridge</WorkingDirectory>
     </Exec>
   </Actions>
