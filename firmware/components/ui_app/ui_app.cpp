@@ -589,7 +589,10 @@ static void moon_anim_timer_cb(lv_timer_t *timer)
 {
     (void) timer;
     if (!img_moon_anim || icon_moon_anim_count <= 0) return;
-    moon_anim_frame = (uint16_t)((moon_anim_frame + 1) % icon_moon_anim_count);
+    /* The animation stores 17 frames where frame[16] duplicates frame[0] to
+     * close the loop. Playing it would show frame 0 twice and cause a visible
+     * stall, so step through only the 16 unique frames. */
+    moon_anim_frame = (uint16_t)((moon_anim_frame + 1) % (icon_moon_anim_count - 1));
     lv_image_set_src(img_moon_anim, icon_moon_anim[moon_anim_frame]);
 }
 
