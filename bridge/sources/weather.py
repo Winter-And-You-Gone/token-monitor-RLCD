@@ -334,25 +334,31 @@ def fetch_weather(
 ) -> Weather | None:
     display_city = (city or DEFAULT_CITY).strip() or DEFAULT_CITY
     explicit_coords = lat is not None and lon is not None
-    if CMA_ENABLED and not explicit_coords and display_city:
-        key = ("cma", display_city.casefold())
-        now = time.time()
-        cached = _cache.get(key)
-        if cached and cached["w"] is not None and now - float(cached["ts"]) < TTL:
-            return cached["w"]  # type: ignore
-        w = _fetch_cma(display_city)
-        if w is not None:
-            _cache[key] = {"w": w, "ts": now}
-            return w
 
-    lat, lon, city, city_ascii = _weather_config(lat, lon, city)
-    key = ("coord", round(lat, 4), round(lon, 4), city, city_ascii, bool(CAIYUN_KEY))
+    # Primary source: coordinate-based (Open-Meteo, or Caiyun if keyed). These
+    # track live conditions more reliably than CMA's station feed, which lags
+    # during afternoon heat. Resolve coordinates from the city name when needed.
+    lat2, lon2, city2, city_ascii = _weather_config(lat, lon, city)
+    key = ("coord", round(lat2, 4), round(lon2, 4), city2, city_ascii, bool(CAIYUN_KEY))
     now = time.time()
     cached = _cache.get(key)
     if cached and cached["w"] is not None and now - float(cached["ts"]) < TTL:
         return cached["w"]  # type: ignore
 
-    w = _fetch_caiyun(lat, lon, city, city_ascii) if CAIYUN_KEY else _fetch_openmeteo(lat, lon, city, city_ascii)
+    w = _fetch_caiyun(lat2, lon2, city2, city_ascii) if CAIYUN_KEY else _fetch_openmeteo(lat2, lon2, city2, city_ascii)
     if w is not None:
         _cache[key] = {"w": w, "ts": now}
-    return w or (cached["w"] if cached else None)  # type: ignore
+        return w
+
+    # Fallback: CMA station feed for city-name lookups (no explicit coords).
+    if CMA_ENABLED and not explicit_coords and display_city:
+        cma_key = ("cma", display_city.casefold())
+        cma_cached = _cache.get(cma_key)
+        if cma_cached and cma_cached["w"] is not None and now - float(cma_cached["ts"]) < TTL:
+            return cma_cached["w"]  # type: ignore
+        cma_w = _fetch_cma(display_city)
+        if cma_w is not None:
+            _cache[cma_key] = {"w": cma_w, "ts": now}
+            return cma_w
+
+    return cached["w"] if cached else None  # type: ignore
