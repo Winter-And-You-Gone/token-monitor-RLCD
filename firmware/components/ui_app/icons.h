@@ -23,3 +23,6 @@ extern const int icon_moon_anim_count;
 /* earth animation frames (generated) */
 extern const lv_image_dsc_t *icon_earth_anim[];
 extern const int icon_earth_anim_count;
+/* whale (deepseek) animation frames (generated) */
+extern const lv_image_dsc_t *icon_whale_anim[];
+extern const int icon_whale_anim_count;

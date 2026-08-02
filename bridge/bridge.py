@@ -1434,6 +1434,8 @@ def _mock_report() -> UsageReport:
                 RadarPoint(model="terra", effort="xhigh", iq=76.3, price=2.53, minutes=19, passed=57, tasks=112),
                 RadarPoint(model="luna", effort="max", iq=93.8, price=2.39, minutes=32, passed=70, tasks=112),
                 RadarPoint(model="luna", effort="xhigh", iq=67.0, price=1.54, minutes=22, passed=50, tasks=112),
+                RadarPoint(model="gpt-5.5", effort="xhigh", iq=93.8, price=5.81, minutes=24, passed=70, tasks=112),
+                RadarPoint(model="deepseek", effort="max", iq=76.3, price=0.10, minutes=22, passed=57, tasks=112),
             ],
         ),
     )

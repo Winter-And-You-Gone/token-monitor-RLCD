@@ -19,17 +19,24 @@ WANTED = {
     ("gpt-5.6-sol", "ultra"), ("gpt-5.6-sol", "max"), ("gpt-5.6-sol", "xhigh"),
     ("gpt-5.6-terra", "ultra"), ("gpt-5.6-terra", "max"), ("gpt-5.6-terra", "xhigh"),
     ("gpt-5.6-luna", "ultra"), ("gpt-5.6-luna", "max"), ("gpt-5.6-luna", "xhigh"),
+    ("gpt-5.5", "xhigh"),
+    ("deepseek-v4-flash", "max"),
 }
 
 WANTED_ORDERED = [
     ("gpt-5.6-sol", "ultra"), ("gpt-5.6-sol", "max"), ("gpt-5.6-sol", "xhigh"),
     ("gpt-5.6-terra", "ultra"), ("gpt-5.6-terra", "max"), ("gpt-5.6-terra", "xhigh"),
     ("gpt-5.6-luna", "ultra"), ("gpt-5.6-luna", "max"), ("gpt-5.6-luna", "xhigh"),
+    ("gpt-5.5", "xhigh"),
+    ("deepseek-v4-flash", "max"),
 ]
 
 MAX_HISTORY = 12
 
-MODEL_SHORT = {"gpt-5.6-sol": "sol", "gpt-5.6-terra": "terra", "gpt-5.6-luna": "luna"}
+MODEL_SHORT = {
+    "gpt-5.6-sol": "sol", "gpt-5.6-terra": "terra", "gpt-5.6-luna": "luna",
+    "gpt-5.5": "gpt-5.5", "deepseek-v4-flash": "deepseek",
+}
 
 _cache: dict[str, object] = {"d": None, "ts": 0.0}
 

@@ -63,11 +63,11 @@ typedef struct {
     bool           valid;
 } usage_other_agent_t;
 
-#define RADAR_MAX_POINTS 9
+#define RADAR_MAX_POINTS 11
 #define RADAR_MAX_HISTORY 12
 
 typedef struct {
-    char    model[8];    // "sol", "terra", "luna"
+    char    model[12];   // "sol", "terra", "luna", "gpt-5.5", "deepseek"
     char    effort[8];   // "ultra", "max", "xhigh"
     double  iq;
     double  price;
@@ -78,7 +78,7 @@ typedef struct {
 } usage_radar_point_t;
 
 typedef struct {
-    char    model[8];
+    char    model[12];
     char    effort[8];
     float   iqs[RADAR_MAX_HISTORY];
     int     iq_count;

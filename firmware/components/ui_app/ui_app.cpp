@@ -75,6 +75,7 @@ typedef enum {
 
 typedef struct {
     lv_obj_t *cell;
+    lv_obj_t *model;
     lv_obj_t *iq;
     lv_obj_t *price;
     lv_obj_t *time;
@@ -97,13 +98,16 @@ static uint16_t moon_anim_frame = 0;
 static lv_obj_t *img_earth_anim = NULL;
 static lv_timer_t *earth_anim_timer = NULL;
 static uint16_t earth_anim_frame = 0;
+static lv_obj_t *img_whale_anim = NULL;
+static lv_timer_t *whale_anim_timer = NULL;
+static uint16_t whale_anim_frame = 0;
 static lv_obj_t *radar_page, *lbl_radar_updated;
-static radar_cell_t radar_cells[3][3];
+static radar_cell_t radar_cells[4][3];
 static page_kind_t g_current_page = PAGE_TOKEN;
 static lv_obj_t *g_overlays[PAGE_COUNT];
 static uint32_t radar_last_update_tick = 0;
 static lv_timer_t *radar_timer = NULL;
-static lv_point_precise_t radar_spark_pts[3][3][RADAR_MAX_HISTORY];
+static lv_point_precise_t radar_spark_pts[4][3][RADAR_MAX_HISTORY];
 #define RADAR_REFRESH_SEC 600
 static claude_panel_t   claude_panels[MAX_AGENT_PANELS];
 static deepseek_panel_t deepseek_panels[MAX_AGENT_PANELS];
@@ -484,12 +488,13 @@ static lv_obj_t *mk_radar_cell(lv_obj_t *p, int x, int y, int w, int h, radar_ce
     lv_obj_set_style_radius(c, 0, 0);
 
     cell->cell = c;
-    cell->iq     = mklabel(c, 4, 2, &font_bal28, "0");
-    cell->price  = mkalign(c, 4, 26, 50, LV_TEXT_ALIGN_LEFT, &font_amt14, "");
-    cell->time   = mkalign(c, 54, 26, w - 58, LV_TEXT_ALIGN_RIGHT, &font_amt14, "");
-    cell->pass   = mkalign(c, 4, 40, w - 8, LV_TEXT_ALIGN_LEFT, FONT_CN14, "");
+    cell->model    = mkalign(c, 4, 1, w - 8, LV_TEXT_ALIGN_LEFT, &font_amt14, "");
+    cell->iq       = mklabel(c, 6, 2, &lv_font_montserrat_20, "0");
+    cell->price    = mkalign(c, 6, 26, 50, LV_TEXT_ALIGN_LEFT, &font_amt14, "");
+    cell->time     = mkalign(c, 56, 26, w - 60, LV_TEXT_ALIGN_RIGHT, &font_amt14, "");
+    cell->pass     = mkalign(c, 4, 42, w - 8, LV_TEXT_ALIGN_LEFT, FONT_CN14, "");
     cell->sparkline = lv_line_create(c);
-    lv_obj_set_pos(cell->sparkline, 4, 52);
+    lv_obj_set_pos(cell->sparkline, 58, 49);
     lv_obj_set_style_line_color(cell->sparkline, INK, 0);
     lv_obj_set_style_line_width(cell->sparkline, 1, 0);
     lv_obj_add_flag(cell->sparkline, LV_OBJ_FLAG_HIDDEN);
@@ -515,8 +520,8 @@ static void mk_radar_page(lv_obj_t *screen)
 
     static const lv_image_dsc_t *model_icons[3] = {&icon_sun, &icon_earth, &icon_moon};
     static const char *model_names[3] = {"Sol", "Terra", "Luna"};
-    static const int row_y[3] = {48, 124, 200};
-    static const int row_h = 72;
+    static const int row_y[3] = {48, 112, 176};
+    static const int row_h = 62;
 
     for (int m = 0; m < 3; ++m) {
         mkalign(radar_page, 4, row_y[m] - 4, 48, LV_TEXT_ALIGN_CENTER, &font_amt14, model_names[m]);
@@ -538,8 +543,53 @@ static void mk_radar_page(lv_obj_t *screen)
             mk_radar_cell(radar_page, col_x[e], row_y[m], col_w, row_h, &radar_cells[m][e]);
     }
 
-    mkdiv(radar_page, 8, 276, 384, 1);
-    mkalign(radar_page, 8, 280, 384, LV_TEXT_ALIGN_CENTER, FONT_CN14,
+    /* Row 4: DeepSeek (left) + GPT-5.5 (right), wide short cells */
+    {
+        const int extra_y = 240, extra_h = 40;
+        /* Text widths (font_amt14): "DeepSeek-V4-Flash MAX"=193.7px,
+         * "GPT-5.5 XHIGH"=117.7px. Allocate 204/126 (204+2+126=332,
+         * matches upper 3x3 span x60..392) with ~10px/8px slack. */
+        const int extra_w[2] = {204, 126};
+        const int gap = 2;
+        int x = 60;  /* left-align cells with the upper 3x3 grid */
+        for (int k = 0; k < 2; ++k) {
+            mk_radar_cell(radar_page, x, extra_y, extra_w[k], extra_h, &radar_cells[3][k]);
+            x += extra_w[k] + gap;
+        }
+        /* DeepSeek whale logo in the freed left column (animated) */
+        if (icon_whale_anim_count > 0)
+            img_whale_anim = mkicon(radar_page, (60 - 48) / 2, extra_y + (extra_h - 48) / 2,
+                                    icon_whale_anim[0]);
+        else
+            mkicon(radar_page, (60 - 34) / 2, extra_y + (extra_h - 34) / 2, &icon_deepseek);
+        /* DeepSeek: model+effort on top, IQ+price+sparkline below */
+        radar_cell_t *ds = &radar_cells[3][0];
+        lv_label_set_text(ds->model, "DeepSeek-V4-Flash MAX");
+        lv_obj_set_pos(ds->model, 4, 1);
+        lv_obj_set_width(ds->model, extra_w[0] - 8);
+        lv_obj_set_pos(ds->iq, 6, 16);
+        lv_obj_set_pos(ds->price, 58, 20);
+        lv_obj_set_width(ds->price, 80);
+        lv_obj_set_pos(ds->sparkline, 104, 24);  /* fills the right side of the cell */
+        lv_obj_set_style_line_color(ds->sparkline, INK, 0);
+        lv_obj_set_style_line_width(ds->sparkline, 1, 0);
+        lv_obj_add_flag(ds->time, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(ds->pass, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(ds->sparkline, LV_OBJ_FLAG_HIDDEN);
+        /* GPT-5.5: model+effort on top, IQ+price below */
+        radar_cell_t *g5 = &radar_cells[3][1];
+        lv_label_set_text(g5->model, "GPT-5.5 XHIGH");
+        lv_obj_set_pos(g5->model, 4, 1);
+        lv_obj_set_width(g5->model, extra_w[1] - 8);
+        lv_obj_set_pos(g5->iq, 6, 16);
+        lv_obj_set_pos(g5->price, 70, 20);  /* two spaces clear of the IQ */
+        lv_obj_set_width(g5->price, 56);
+        lv_obj_add_flag(g5->time, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(g5->pass, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(g5->sparkline, LV_OBJ_FLAG_HIDDEN);
+        /* spare right cell of row 4 stays empty */
+    }
+    mkalign(radar_page, 8, 282, 384, LV_TEXT_ALIGN_CENTER, FONT_CN14,
             "数据源:codexradar.com - 112 题基准测试 - 每10分钟刷新");
 
     lv_obj_add_flag(radar_page, LV_OBJ_FLAG_HIDDEN);
@@ -602,6 +652,16 @@ static void earth_anim_timer_cb(lv_timer_t *timer)
     if (!img_earth_anim || icon_earth_anim_count <= 0) return;
     earth_anim_frame = (uint16_t)((earth_anim_frame + 1) % icon_earth_anim_count);
     lv_image_set_src(img_earth_anim, icon_earth_anim[earth_anim_frame]);
+}
+
+static void whale_anim_timer_cb(lv_timer_t *timer)
+{
+    (void) timer;
+    if (!img_whale_anim || icon_whale_anim_count <= 0) return;
+    /* frame 16 duplicates frame 0 to close the loop; step only through the
+     * 16 unique frames so frame 0 is not shown twice (moon-style). */
+    whale_anim_frame = (uint16_t)((whale_anim_frame + 1) % (icon_whale_anim_count - 1));
+    lv_image_set_src(img_whale_anim, icon_whale_anim[whale_anim_frame]);
 }
 
 void ui_app_init(void)
@@ -672,6 +732,8 @@ void ui_app_init(void)
     moon_anim_timer = lv_timer_create(moon_anim_timer_cb, 300, NULL);
     if (earth_anim_timer) lv_timer_del(earth_anim_timer);
     earth_anim_timer = lv_timer_create(earth_anim_timer_cb, 250, NULL);
+    if (whale_anim_timer) lv_timer_del(whale_anim_timer);
+    whale_anim_timer = lv_timer_create(whale_anim_timer_cb, 200, NULL);
     have_data = false;
     logged_first_report = false;
     ESP_LOGI(TAG, "UI build marker UI v14, model_col=112, token_col=60, pet_eye_knockout=1, carousel=30fps-fast, pet_art=crab-focus, battery=1, pet_big_page=1, pet_big_size=184, radar_page=1, pages=3");
@@ -818,11 +880,10 @@ static const usage_radar_trend_t *find_radar_trend(const usage_radar_t *r, const
     return NULL;
 }
 
-static void update_radar_sparkline(radar_cell_t *c, int m, int e, const usage_radar_t *r)
+static void update_radar_sparkline(radar_cell_t *c, int pt_idx, const char *model,
+                                   const char *effort, const usage_radar_t *r, int sw)
 {
-    static const char *models[3]  = {"sol", "terra", "luna"};
-    static const char *efforts[3] = {"ultra", "max", "xhigh"};
-    const usage_radar_trend_t *t = find_radar_trend(r, models[m], efforts[e]);
+    const usage_radar_trend_t *t = find_radar_trend(r, model, effort);
     if (!t || t->iq_count < 2) {
         if (c->sparkline) lv_obj_add_flag(c->sparkline, LV_OBJ_FLAG_HIDDEN);
         return;
@@ -835,8 +896,8 @@ static void update_radar_sparkline(radar_cell_t *c, int m, int e, const usage_ra
     float range = max_iq - min_iq;
     if (range < 0.1f) range = 1.0f;
 
-    const int sw = 100, sh = 16;
-    lv_point_precise_t *pts = radar_spark_pts[m][e];
+    const int sh = 8;
+    lv_point_precise_t *pts = radar_spark_pts[pt_idx / 3][pt_idx % 3];
     for (int i = 0; i < t->iq_count; ++i) {
         pts[i].x = (t->iq_count > 1) ? (i * sw / (t->iq_count - 1)) : 0;
         pts[i].y = (int32_t)(sh - (t->iqs[i] - min_iq) / range * sh);
@@ -847,8 +908,9 @@ static void update_radar_sparkline(radar_cell_t *c, int m, int e, const usage_ra
     }
 }
 
-static void update_radar_cell(radar_cell_t *c, const usage_radar_point_t *pt)
+static void update_radar_cell(radar_cell_t *c, const char *model, const usage_radar_point_t *pt)
 {
+    if (c->model) lv_label_set_text(c->model, model ? model : "");
     if (!pt || !pt->valid) {
         lv_obj_set_style_bg_color(c->cell, WHITE, 0);
         lv_obj_set_style_border_width(c->cell, 1, 0);
@@ -882,9 +944,15 @@ static void update_radar_page(const usage_radar_t *r)
     static const char *efforts[3] = {"ultra", "max", "xhigh"};
     for (int m = 0; m < 3; ++m)
         for (int e = 0; e < 3; ++e) {
-            update_radar_cell(&radar_cells[m][e], find_radar_point(r, models[m], efforts[e]));
-            update_radar_sparkline(&radar_cells[m][e], m, e, r);
+            update_radar_cell(&radar_cells[m][e], NULL,
+                              find_radar_point(r, models[m], efforts[e]));
+            update_radar_sparkline(&radar_cells[m][e], m * 3 + e,
+                                   models[m], efforts[e], r, 50);
         }
+    /* Row 4: DeepSeek (left) + GPT-5.5 (right) */
+    update_radar_cell(&radar_cells[3][0], "DeepSeek-V4-Flash MAX", find_radar_point(r, "deepseek", "max"));
+    update_radar_sparkline(&radar_cells[3][0], 9, "deepseek", "max", r, 96);
+    update_radar_cell(&radar_cells[3][1], "GPT-5.5 XHIGH", find_radar_point(r, "gpt-5.5", "xhigh"));
 }
 
 void ui_app_update(const usage_report_t *r)
