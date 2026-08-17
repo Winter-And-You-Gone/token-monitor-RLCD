@@ -1,0 +1,81 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "command": "& \"F:\\Node\\node.exe\" \"X:/ESP32-S3 RLCD/token-monitor-RLCD/bridge/pet_hook.js\" SessionStart --agent dsh",
+            "timeout": 5,
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "command": "& \"F:\\Node\\node.exe\" \"X:/ESP32-S3 RLCD/token-monitor-RLCD/bridge/pet_hook.js\" UserPromptSubmit --agent dsh",
+            "timeout": 5,
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "& \"F:\\Node\\node.exe\" \"X:/ESP32-S3 RLCD/token-monitor-RLCD/bridge/pet_hook.js\" PreToolUse --agent dsh",
+            "timeout": 5,
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "& \"F:\\Node\\node.exe\" \"X:/ESP32-S3 RLCD/token-monitor-RLCD/bridge/pet_hook.js\" PostToolUse --agent dsh",
+            "timeout": 5,
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "command": "& \"F:\\Node\\node.exe\" \"X:/ESP32-S3 RLCD/token-monitor-RLCD/bridge/pet_hook.js\" Stop --agent dsh",
+            "timeout": 5,
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "command": "& \"F:\\Node\\node.exe\" \"X:/ESP32-S3 RLCD/token-monitor-RLCD/bridge/pet_hook.js\" SubagentStart --agent dsh",
+            "timeout": 5,
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "command": "& \"F:\\Node\\node.exe\" \"X:/ESP32-S3 RLCD/token-monitor-RLCD/bridge/pet_hook.js\" SubagentStop --agent dsh",
+            "timeout": 5,
+            "type": "command"
+          }
+        ]
+      }
+    ]
+  }
+}

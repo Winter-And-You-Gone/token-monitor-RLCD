@@ -191,6 +191,85 @@ The `@inline` suffix is mandatory — ZCode tags `plugins.dirs` entries with
 the `inline` marketplace name. Restart the ZCode session after editing.
 See `rlcd-pet-zcode/README.md` for manual smoke-test steps and internals.
 
+### DeepSeek Harness (`dsh`) — dual path
+
+[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (CLI name
+`dsh`) is DeepSeek's official coding-agent harness. Like codex, it has **two
+independent paths**, both idempotent and coexisting:
+
+1. **JSONL poller (primary, `bridge.py`)** — the bridge tails dsh's durable
+   event log at `~/.dsh/sessions/<workspace>/session-<uuid>/session.jsonl.zstd`
+   (raw `session.jsonl` also supported) and maps its typed events to pet
+   states. Independent of dsh config and plugin state — the reliable path.
+   Note: real dsh files are **several concatenated zstd frames** (one per
+   durable publish) whose frame headers omit the content size, so the poller
+   decodes frame-by-frame; the `zstandard` package is required.
+2. **Hooks bridge (backup)** — dsh's `@deepseek-ai/dsh-hooks-claude-code`
+   plugin runs this project's `bridge/dsh_hooks.json` (Claude Code dialect)
+   on the harness interception points and forwards events to
+   `pet_hook.js --agent dsh`. ⚠️ **Limitation:** the harness executes hook
+   commands under the session's sandbox mode, and on hosts without a usable
+   sandbox backend (no bubblewrap/Landlock on Linux, no sandbox-exec on
+   macOS, no ACL restricted-token runner on Windows) it **refuses to run
+   commands unconfined** — the hook is recorded as `hook/result` with
+   decision `pass` but never executes. The only way to make the backup path
+   fire on such hosts is to switch the harness's sandbox mode to
+   `danger-full-access` (a security decision; the JSONL poller needs none of
+   this, which is why it is the primary path).
+
+Event → state mapping (poller, `bridge.py` `DSH_JSONL_EVENT_STATES`):
+
+| dsh session event     | pet state     |
+|-----------------------|---------------|
+| `session`             | `idle`        |
+| `user/message`        | `thinking`    |
+| `turn/start`          | `thinking`    |
+| `step/start`          | `thinking`    |
+| `tool/call`           | `working`     |
+| `tool/result`         | `working`     |
+| `turn/end`            | see below     |
+| `compaction/start`    | `sweeping`    |
+| `subagent/descriptor` | `juggling`    |
+| `approval/asked`      | `notification`|
+
+`turn/end` carries `data.reason.kind`: `error` → `error`; `interrupted` /
+`aborted` → `idle`; `completed` / `max-tokens` → resolved like a codex turn
+end (`attention` when the turn used tools, else `idle`). Streaming chunk
+events (`reasoning-chunks`, `assistant/chunk`, `tool-call-chunks`, ...) are
+deliberately not mapped — the durable `turn/step/tool` events carry the
+state transitions.
+
+Hooks backup path events (via `dsh_hooks.json`, Claude Code names):
+`SessionStart`→`idle`, `UserPromptSubmit`→`thinking`,
+`PreToolUse`/`PostToolUse`→`working`, `PostToolUseFailure`→`error`,
+`Stop`→`codex-turn-end`, `SubagentStart`→`juggling`, `SubagentStop`→`working`
+(only these 7 events are supported by dsh's hooks bridge; the poller covers
+the rest).
+
+Enable the backup path on this machine (desktop profile):
+
+1. Install the plugin into the profile scope (one-time):
+   `pnpm --dir ~/.dsh/profiles/desktop install` after adding
+   `"@deepseek-ai/dsh-hooks-claude-code": "link:<harness>/packages/hooks/hooks-claude-code"`
+   to the profile's `package.json`.
+2. Append to `~/.dsh/profiles/desktop/cordis.patch.yml`:
+   ```yaml
+   - insert:
+       - id: dsh-hooks-claude-code
+         name: '@deepseek-ai/dsh-hooks-claude-code'
+         config:
+           configPath: 'X:/ESP32-S3 RLCD/token-monitor-RLCD/bridge/dsh_hooks.json'
+   ```
+3. Restart the DSH Desktop app. Verify with
+   `node <harness>/apps/cli/lib/bin.js --profile desktop --dump-config | grep hooks-claude-code`.
+   To uninstall, remove the patch entry and the dependency.
+
+`pet_hook.js` normalizes `dsh`/`deepseek-harness`/`deepseek` to agent `dsh`
+and namespaces session ids as `dsh:<uuid>` (a `session-` prefix in hook
+payloads is stripped so both paths share one session record). Like codex,
+the two maps must be kept in sync: `DSH_JSONL_EVENT_STATES` / `DSH_EVENT_STATES`
+(`bridge.py`) ↔ `DSH_EVENT_TO_STATE` (`pet_hook.js`).
+
 ## Endpoints
 
 - `GET /healthz` — liveness + cache age.
@@ -245,6 +324,10 @@ See `rlcd-pet-zcode/README.md` for manual smoke-test steps and internals.
 | `RLCD_PET_MOUSE_SLEEP_SEC` | `300` | seconds of no pet events before yawning/dozing/sleeping. Original Clawd's `mouseSleepTimeout` is 60s, but RLCD defaults longer because there is no mouse movement to reset the timer. |
 | `RLCD_PET_IDLE_LOOK_ASSET` | `clawd-idle-reading.svg` | idle animation asset used by the bridge. |
 | `RLCD_PET_SLEEP_SEQUENCE` | `1` | set `0` to disable the automatic idle-to-sleep sequence. |
+| `RLCD_DSH_JSONL_MONITOR` | `1` | set `0` to disable the dsh session-log poller (`~/.dsh/sessions/**/session.jsonl.zstd`). Requires the `zstandard` package. |
+| `RLCD_DSH_JSONL_POLL_SEC` | `1.5` | dsh poll interval in seconds. |
+| `RLCD_DSH_JSONL_RECENT_SEC` | `120` | first-seen dsh session files older than this are skipped (no history replay). |
+| `RLCD_DSH_SESSION_DIR` | `~/.dsh/sessions` | dsh session-log root override. |
 | `RLCD_TZ` | `Asia/Hong_Kong` | timezone used for daily/monthly period selection from `ccusage` output. |
 | `CCUSAGE_CMD` | unset | optional local command/path override. Runtime `npx` and `@latest` commands are rejected; install once with `npm install -g ccusage` instead. |
 | `CCUSAGE_OFFLINE` | `1` | appends `--offline` to ccusage queries so pricing uses embedded data and the bridge does not touch the network/proxy during refresh. |

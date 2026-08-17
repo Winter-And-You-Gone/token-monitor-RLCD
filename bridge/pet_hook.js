@@ -105,6 +105,17 @@ const ANTIGRAVITY_EVENT_TO_STATE = {
   Stop: "attention",
 };
 
+const DSH_EVENT_TO_STATE = {
+  SessionStart: "idle",
+  UserPromptSubmit: "thinking",
+  PreToolUse: "working",
+  PostToolUse: "working",
+  PostToolUseFailure: "error",
+  Stop: "codex-turn-end",
+  SubagentStart: "juggling",
+  SubagentStop: "working",
+};
+
 const VALID_STATES = new Set([
   "idle",
   "yawning",
@@ -177,6 +188,7 @@ function normalizeAgent(agent) {
   if (normalized === "ag" || normalized === "agy" || normalized === "antigravity" || normalized === "antigravity-cli") {
     return "antigravity-cli";
   }
+  if (normalized === "dsh" || normalized === "deepseek-harness" || normalized === "deepseek") return "dsh";
   return agent.trim();
 }
 
@@ -184,10 +196,20 @@ function isCodexAgent(agent) {
   return normalizeAgent(agent) === "codex";
 }
 
+function isDshAgent(agent) {
+  return normalizeAgent(agent) === "dsh";
+}
+
 function codexSessionIdFromTranscript(transcript) {
   if (typeof transcript !== "string" || !transcript.trim()) return "";
   const name = transcript.replace(/\\/g, "/").split("/").pop() || "";
   const match = name.match(/^rollout-.+-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/i);
+  return match ? match[1] : "";
+}
+
+function dshSessionIdFromTranscript(transcript) {
+  if (typeof transcript !== "string" || !transcript.trim()) return "";
+  const match = transcript.replace(/\\/g, "/").match(/session-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
   return match ? match[1] : "";
 }
 
@@ -209,6 +231,12 @@ function looksLikeAntigravityPayload(payload) {
   ));
 }
 
+function looksLikeDshPayload(payload) {
+  if (!payload || typeof payload !== "object") return false;
+  const transcript = firstString(payload.transcript_path, payload.transcriptPath);
+  return !!dshSessionIdFromTranscript(transcript);
+}
+
 function resolveAgent(payload) {
   const agent = firstString(
     argValue("--agent"),
@@ -218,7 +246,8 @@ function resolveAgent(payload) {
   );
   if (agent) return normalizeAgent(agent);
   if (looksLikeCodexPayload(payload)) return "codex";
-  return looksLikeAntigravityPayload(payload) ? "antigravity-cli" : "claude-code";
+  if (looksLikeAntigravityPayload(payload)) return "antigravity-cli";
+  return looksLikeDshPayload(payload) ? "dsh" : "claude-code";
 }
 
 function resolveState(event, requestedState, payload, agent) {
@@ -234,6 +263,11 @@ function resolveState(event, requestedState, payload, agent) {
     if (event === "Stop" && hasStopError(payload)) return "error";
     if (event === "Stop" && payload && payload.fullyIdle === false) return "working";
     return ANTIGRAVITY_EVENT_TO_STATE[event] || EVENT_TO_STATE[event] || "idle";
+  }
+  if (isDshAgent(agent)) {
+    if (event === "PostToolUse" && hasPayloadError(payload)) return "error";
+    if (event === "Stop" && hasStopError(payload)) return "error";
+    return DSH_EVENT_TO_STATE[event] || EVENT_TO_STATE[event] || "idle";
   }
   return EVENT_TO_STATE[event] || "idle";
 }
@@ -267,6 +301,13 @@ function resolveSessionId(payload, agent) {
     const conversation = firstString(source.conversationId, source.conversation_id);
     const raw = direct || conversation || transcript.replace(/\\/g, "/").split("/").slice(-2, -1)[0] || "default";
     return raw.startsWith("antigravity:") ? raw : `antigravity:${raw}`;
+  }
+  if (isDshAgent(agent)) {
+    // Normalize away a "session-" prefix so hook payloads and the bridge's
+    // JSONL poller (keyed by the session-<uuid> dir name) share one record.
+    const raw = firstString(direct, dshSessionIdFromTranscript(transcript)) || "default";
+    const stripped = raw.startsWith("session-") ? raw.slice("session-".length) : raw;
+    return stripped.startsWith("dsh:") ? stripped : `dsh:${stripped}`;
   }
   if (direct) return direct;
   const conversation = firstString(source.conversationId, source.conversation_id);

@@ -117,12 +117,14 @@ scripts/gen_pet_anim.py → firmware/components/ui_app/pet_anim.c
 scripts/gen_pet_big_anim.py → firmware/components/ui_app/pet_big_anim.c
 ```
 
-### ZCode / Claude Code / Codex 集成
+### ZCode / Claude Code / Codex / DeepSeek Harness 集成
 
 AI agent 的事件通过 `rlcd-pet-zcode/` 插件（ZCode 端）或 `bridge/pet_hook.js`（通用端）转发给 bridge，bridge 按事件类型切换到对应动画。
 
 - **`rlcd-pet-zcode/`** — ZCode 插件，通过 `hooks/run-hook.cmd` 将 ZCode 生命周期事件转发给 `pet_hook.js --agent zcode`
 - **`bridge/pet_hook.js`** — 事件→状态映射的单一真相源，支持 `--agent` 参数区分来源
+- **codex** — 双通道：bridge.py JSONL 轮询器（主，`CODEX_JSONL_EVENT_STATES`）+ `bridge/codex_hooks.json` hooks（备用）
+- **DeepSeek Harness（dsh）** — 双通道：bridge.py 轮询 `~/.dsh/sessions/**/session.jsonl.zstd`（主，`DSH_JSONL_EVENT_STATES`，需 `zstandard` 包）+ `bridge/dsh_hooks.json` 经 dsh 的 `dsh-hooks-claude-code` 插件（备用，配置在 `~/.dsh/profiles/desktop/cordis.patch.yml`）
 - 多 agent 并发（sessions ≥ 2）自动走 `headphones-groove` 动画
 
 ---

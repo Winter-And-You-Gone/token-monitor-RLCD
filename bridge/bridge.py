@@ -273,6 +273,50 @@ CODEX_TOOL_EVENTS = {
     "event_msg:web_search_end",
     "event_msg:mcp_tool_call_end",
 }
+DSH_JSONL_MONITOR_ENABLED = _bool_env("RLCD_DSH_JSONL_MONITOR", True)
+DSH_JSONL_POLL_SEC = _float_env("RLCD_DSH_JSONL_POLL_SEC", 1.5)
+DSH_JSONL_RECENT_SEC = _float_env("RLCD_DSH_JSONL_RECENT_SEC", 120.0)
+DSH_SESSION_DIR = Path(os.environ.get("RLCD_DSH_SESSION_DIR", "") or (Path.home() / ".dsh" / "sessions"))
+DSH_JSONL_EVENT_STATES = {
+    # DeepSeek Harness (dsh) durable session events, read from
+    # ~/.dsh/sessions/<workspace>/session-<uuid>/session.jsonl.zstd.
+    # Event names verified against local rc.5 session logs; compaction/ and
+    # subagent/ names follow the dsh persistence catalog (newer versions).
+    # "turn/end" is handled by _dsh_turn_end_state (reason-aware), not here.
+    "session": "idle",
+    "user/message": "thinking",
+    "turn/start": "thinking",
+    "step/start": "thinking",
+    "tool/call": "working",
+    "tool/result": "working",
+    "compaction/start": "sweeping",
+    "subagent/descriptor": "juggling",
+    "approval/asked": "notification",
+}
+# Events that start a new dsh turn (reset had_tool_use). Covers both the
+# JSONL poller names and the hooks-backup-path CC names (UserPromptSubmit).
+DSH_TURN_RESET_EVENTS = {"session", "user/message", "turn/start", "UserPromptSubmit"}
+# Events that indicate dsh actually invoked a tool (set had_tool_use=True).
+# Covers both the JSONL poller names (tool/call, tool/result) and the
+# hooks-backup-path CC names (PreToolUse/PostToolUse/PostToolUseFailure).
+DSH_TOOL_EVENTS = {
+    "tool/call",
+    "tool/result",
+    "PreToolUse",
+    "PostToolUse",
+    "PostToolUseFailure",
+}
+# Server-side mirror of pet_hook.js DSH_EVENT_TO_STATE (hooks backup path).
+DSH_EVENT_STATES = {
+    "SessionStart": "idle",
+    "UserPromptSubmit": "thinking",
+    "PreToolUse": "working",
+    "PostToolUse": "working",
+    "PostToolUseFailure": "error",
+    "Stop": "codex-turn-end",
+    "SubagentStart": "juggling",
+    "SubagentStop": "working",
+}
 
 _cache_lock = threading.Lock()
 _cache: dict[str, object] = {"report": None, "ts": 0.0, "error": None, "other": []}
@@ -300,9 +344,19 @@ class _CodexLogEntry:
     partial: str = ""
 
 
+@dataclass
+class _DshLogEntry:
+    lines_processed: int = 0
+    partial: str = ""
+    session_id: str = ""
+    last_stat: tuple[int, int] = (0, 0)
+
+
 _pet_sessions: dict[str, _PetSession] = {}
 _codex_log_entries: dict[Path, _CodexLogEntry] = {}
 _codex_log_monitor_started = False
+_dsh_log_entries: dict[Path, _DshLogEntry] = {}
+_dsh_log_monitor_started = False
 _pet_sleep_timer: threading.Timer | None = None
 _pet_idle_started_at: datetime | None = None
 _weather_override_lock = threading.Lock()
@@ -789,6 +843,8 @@ def _normalize_pet_agent(agent: str) -> str:
         return "codex"
     if normalized in {"ag", "agy", "antigravity", "antigravity-cli"}:
         return "antigravity-cli"
+    if normalized in {"dsh", "deepseek-harness", "deepseek"}:
+        return "dsh"
     return agent.strip()
 
 
@@ -799,6 +855,12 @@ def _pet_session_id(data: dict[str, object], agent: str) -> str:
             return f"codex:{session_id}"
         if _is_antigravity_agent(agent) and not session_id.startswith("antigravity:"):
             return f"antigravity:{session_id}"
+        if _is_dsh_agent(agent):
+            # Normalize away a "session-" prefix so hook payloads and the JSONL
+            # poller (which keys by the session-<uuid> dir name) collide on the
+            # same session record.
+            raw = session_id[len("session-"):] if session_id.startswith("session-") else session_id
+            return raw if raw.startswith("dsh:") else f"dsh:{raw}"
         return session_id
     conversation_id = _pet_string(data, "conversationId", "conversation_id")
     if conversation_id:
@@ -974,6 +1036,178 @@ def _start_codex_log_monitor() -> None:
     threading.Thread(target=_loop, name="codex-jsonl-monitor", daemon=True).start()
 
 
+try:
+    import zstandard as _zstandard
+except Exception:  # pragma: no cover - env without the extra
+    _zstandard = None
+
+
+def _dsh_session_id_from_path(file_path: Path) -> str:
+    name = file_path.parent.name
+    match = re.match(
+        r"^session-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$",
+        name,
+        flags=re.IGNORECASE,
+    )
+    return match.group(1) if match else ""
+
+
+def _dsh_session_files(root: Path = DSH_SESSION_DIR) -> list[Path]:
+    if not root.is_dir():
+        return []
+    files: list[Path] = []
+    try:
+        files.extend(root.rglob("session.jsonl.zstd"))
+        files.extend(root.rglob("session.jsonl"))
+    except OSError:
+        return files
+    return sorted(set(files))
+
+
+def _dsh_decode(file_path: Path) -> bytes | None:
+    try:
+        data = file_path.read_bytes()
+    except OSError:
+        return None
+    if not file_path.name.endswith(".zstd"):
+        return data
+    if _zstandard is None:
+        return None
+    try:
+        # Real dsh session files are several concatenated zstd frames (one per
+        # durable publish) whose frame headers omit the content size, so
+        # neither single-shot decompress() nor a single decompressobj() works.
+        chunks: list[bytes] = []
+        rest = data
+        while rest:
+            dec = _zstandard.ZstdDecompressor().decompressobj()
+            chunks.append(dec.decompress(rest))
+            rest = dec.unused_data
+        return b"".join(chunks)
+    except Exception:
+        return None
+
+
+def _dsh_turn_end_state(obj: dict[str, object]) -> str | None:
+    # turn/end carries data.reason.kind: completed/interrupted/aborted/error/
+    # max-tokens. Error ends surface the error crab; user-interrupted/aborted
+    # turns go idle; everything else resolves like a codex turn end (attention
+    # when the turn used tools, else idle) via the shared codex-turn-end path.
+    data = obj.get("data")
+    reason = data.get("reason") if isinstance(data, dict) else None
+    kind = reason.get("kind") if isinstance(reason, dict) else None
+    if kind == "error":
+        return "error"
+    if kind in {"interrupted", "aborted"}:
+        return "idle"
+    return "codex-turn-end"
+
+
+def _dsh_process_jsonl_line(line: str, entry: _DshLogEntry, apply_event=None) -> bool:
+    try:
+        obj = json.loads(line)
+    except json.JSONDecodeError:
+        return False
+    if not isinstance(obj, dict):
+        return False
+    event_type = obj.get("type")
+    if not isinstance(event_type, str) or not event_type:
+        return False
+    state = _dsh_turn_end_state(obj) if event_type == "turn/end" else DSH_JSONL_EVENT_STATES.get(event_type)
+    if not state:
+        return False
+    if apply_event is None:
+        apply_event = _apply_pet_event
+    apply_event({
+        "state": state,
+        "event": event_type,
+        "agent": "dsh",
+        "session_id": entry.session_id,
+    })
+    return True
+
+
+def _dsh_poll_log_file(file_path: Path, *, start_at_end: bool = False, apply_event=None) -> int:
+    session_id = _dsh_session_id_from_path(file_path)
+    if not session_id:
+        return 0
+    try:
+        stat = file_path.stat()
+    except OSError:
+        return 0
+    entry = _dsh_log_entries.get(file_path)
+    if entry is None:
+        entry = _DshLogEntry(session_id=session_id)
+        _dsh_log_entries[file_path] = entry
+    elif (stat.st_size, stat.st_mtime_ns) == entry.last_stat:
+        return 0
+    raw = _dsh_decode(file_path)
+    if raw is None:
+        return 0
+    text = entry.partial + raw.decode("utf-8", errors="replace")
+    lines = text.split("\n")
+    if lines and lines[-1] == "":
+        complete, next_partial = lines[:-1], ""
+    else:
+        complete, next_partial = lines[:-1], lines[-1]
+    processed = entry.lines_processed
+    if processed > len(complete):
+        processed = 0  # file was replaced/truncated; re-read from the start
+    entry.lines_processed = len(complete)
+    entry.partial = next_partial
+    entry.last_stat = (stat.st_size, stat.st_mtime_ns)
+    if start_at_end:
+        return 0
+    applied = 0
+    for line in complete[processed:]:
+        if line.strip() and _dsh_process_jsonl_line(line, entry, apply_event=apply_event):
+            applied += 1
+    return applied
+
+
+def _dsh_log_poll(*, root: Path = DSH_SESSION_DIR, bootstrap: bool = False, apply_event=None) -> int:
+    if _zstandard is None:
+        return 0
+    applied = 0
+    now_ts = time.time()
+    files = _dsh_session_files(root)
+    active = set(files)
+    for file_path in files:
+        first_seen = file_path not in _dsh_log_entries
+        if first_seen and not bootstrap:
+            try:
+                if now_ts - file_path.stat().st_mtime > DSH_JSONL_RECENT_SEC:
+                    continue
+            except OSError:
+                continue
+        applied += _dsh_poll_log_file(file_path, start_at_end=bootstrap and first_seen, apply_event=apply_event)
+    for tracked_path in list(_dsh_log_entries):
+        if tracked_path not in active:
+            _dsh_log_entries.pop(tracked_path, None)
+    return applied
+
+
+def _start_dsh_log_monitor() -> None:
+    global _dsh_log_monitor_started
+    if _dsh_log_monitor_started or not DSH_JSONL_MONITOR_ENABLED or DSH_JSONL_POLL_SEC <= 0:
+        return
+    _dsh_log_monitor_started = True
+    try:
+        _dsh_log_poll(bootstrap=True)
+    except Exception:
+        pass
+
+    def _loop() -> None:
+        while True:
+            try:
+                _dsh_log_poll()
+            except Exception:
+                pass
+            time.sleep(DSH_JSONL_POLL_SEC)
+
+    threading.Thread(target=_loop, name="dsh-jsonl-monitor", daemon=True).start()
+
+
 def _looks_like_codex_payload(data: dict[str, object]) -> bool:
     if (
         isinstance(data.get("codexOriginator"), str)
@@ -990,16 +1224,24 @@ def _is_codex_agent(agent: str) -> bool:
     return agent.strip().lower() == "codex"
 
 
-def _codex_stop_state(session: _PetSession | None) -> str:
+def _is_dsh_agent(agent: str) -> bool:
+    return _normalize_pet_agent(agent) == "dsh"
+
+
+def _turn_end_stop_state(session: _PetSession | None) -> str:
     if session and session.had_tool_use and not session.headless:
         return "attention"
     return "idle"
 
 
-def _codex_had_tool_use(event: str, existing: _PetSession | None) -> bool:
-    if event in CODEX_TURN_RESET_EVENTS:
+def _pet_had_tool_use(event: str, existing: _PetSession | None, agent: str) -> bool:
+    if _is_dsh_agent(agent):
+        reset, tool = DSH_TURN_RESET_EVENTS, DSH_TOOL_EVENTS
+    else:
+        reset, tool = CODEX_TURN_RESET_EVENTS, CODEX_TOOL_EVENTS
+    if event in reset:
         return False
-    if event in CODEX_TOOL_EVENTS:
+    if event in tool:
         return True
     return existing.had_tool_use if existing else False
 
@@ -1047,6 +1289,12 @@ def _pet_state_for_event(data: dict[str, object], raw_state: str, event: str, ag
         if event == "Stop" and _pet_has_stop_error(data):
             return "error"
         return CODEX_EVENT_STATES.get(event, PET_EVENT_STATES.get(event, "idle"))
+    if _is_dsh_agent(agent):
+        if event == "PostToolUse" and _pet_has_payload_error(data):
+            return "error"
+        if event == "Stop" and _pet_has_stop_error(data):
+            return "error"
+        return DSH_EVENT_STATES.get(event, PET_EVENT_STATES.get(event, "idle"))
     if _is_antigravity_agent(agent) or _looks_like_antigravity_payload(data):
         if event == "PostToolUse" and _pet_has_payload_error(data):
             return "error"
@@ -1094,7 +1342,7 @@ def _apply_pet_event(data: dict[str, object]) -> PetState:
             )
 
         if update.state == "codex-turn-end":
-            update.state = _codex_stop_state(existing)
+            update.state = _turn_end_stop_state(existing)
 
         if event == "SessionEnd":
             ending = existing
@@ -1190,7 +1438,7 @@ def _apply_pet_event(data: dict[str, object]) -> PetState:
             existing.event = event
             existing.agent = effective_agent or existing.agent
             existing.last_tool_boundary_at = now if event in {"PostToolUse", "PostToolUseFailure"} else existing.last_tool_boundary_at
-            existing.had_tool_use = _codex_had_tool_use(event, existing)
+            existing.had_tool_use = _pet_had_tool_use(event, existing, effective_agent)
         else:
             _pet_sessions[session_id] = _PetSession(
                 state=update.state,
@@ -1202,7 +1450,7 @@ def _apply_pet_event(data: dict[str, object]) -> PetState:
                     existing.last_tool_boundary_at if existing else None
                 ),
                 headless=effective_headless,
-                had_tool_use=_codex_had_tool_use(event, existing),
+                had_tool_use=_pet_had_tool_use(event, existing, effective_agent),
             )
         _evict_old_pet_sessions()
         resolved_state, resolved_agent = _pet_resolved_display_state()
@@ -1382,6 +1630,7 @@ def _start_refresher() -> None:
     global _refresher_started, _pet_idle_started_at
     if _refresher_started:
         _start_codex_log_monitor()
+        _start_dsh_log_monitor()
         _start_mouse_monitor()
         return
     _refresher_started = True
@@ -1391,6 +1640,7 @@ def _start_refresher() -> None:
             _pet_schedule_sleep_timer_locked(_pet_state.model_copy())
     threading.Thread(target=_refresher_loop, name="usage-refresher", daemon=True).start()
     _start_codex_log_monitor()
+    _start_dsh_log_monitor()
     _start_mouse_monitor()
 
 

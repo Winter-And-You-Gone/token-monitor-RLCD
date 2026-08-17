@@ -157,6 +157,187 @@ class PetStateMappingTests(unittest.TestCase):
         self.assertEqual(bridge._pet_asset_for("working", sessions=4), "clawd-working-building.svg")
         self.assertEqual(bridge._pet_asset_for("juggling", subagents=1), "clawd-working-juggling.svg")
 
+    def test_dsh_agent_is_normalized(self) -> None:
+        self.assertEqual(bridge._normalize_pet_agent("dsh"), "dsh")
+        self.assertEqual(bridge._normalize_pet_agent("deepseek-harness"), "dsh")
+        self.assertEqual(bridge._normalize_pet_agent("DeepSeek"), "dsh")
+
+    def test_dsh_hook_events_map_via_cc_names(self) -> None:
+        prompt = bridge._pet_state_from_event({"event": "UserPromptSubmit", "agent": "dsh"})
+        tool = bridge._pet_state_from_event({"event": "PreToolUse", "agent": "dsh"})
+        failure = bridge._pet_state_from_event({"event": "PostToolUseFailure", "agent": "dsh"})
+        subagent = bridge._pet_state_from_event({"event": "SubagentStart", "agent": "dsh"})
+
+        self.assertEqual(prompt.state, "thinking")
+        self.assertEqual(prompt.agent, "dsh")
+        self.assertEqual(tool.state, "working")
+        self.assertEqual(failure.state, "error")
+        self.assertEqual(subagent.state, "juggling")
+
+    def test_dsh_stop_is_codex_turn_end(self) -> None:
+        state = bridge._pet_state_from_event({"event": "Stop", "agent": "dsh"})
+
+        self.assertEqual(state.state, "codex-turn-end")
+
+    def test_dsh_turn_end_reason_mapping(self) -> None:
+        self.assertEqual(bridge._dsh_turn_end_state({"type": "turn/end", "data": {"reason": {"kind": "completed"}}}), "codex-turn-end")
+        self.assertEqual(bridge._dsh_turn_end_state({"type": "turn/end", "data": {"reason": {"kind": "max-tokens"}}}), "codex-turn-end")
+        self.assertEqual(bridge._dsh_turn_end_state({"type": "turn/end", "data": {"reason": {"kind": "interrupted"}}}), "idle")
+        self.assertEqual(bridge._dsh_turn_end_state({"type": "turn/end", "data": {"reason": {"kind": "aborted"}}}), "idle")
+        self.assertEqual(bridge._dsh_turn_end_state({"type": "turn/end", "data": {"reason": {"kind": "error"}}}), "error")
+        self.assertEqual(bridge._dsh_turn_end_state({"type": "turn/end"}), "codex-turn-end")
+
+    def test_dsh_jsonl_tool_call_line_posts_working(self) -> None:
+        events: list[dict[str, object]] = []
+        entry = bridge._DshLogEntry(session_id="123e4567-e89b-12d3-a456-426614174000")
+        line = json.dumps({"type": "tool/call", "data": {"name": "pwsh"}})
+
+        applied = bridge._dsh_process_jsonl_line(line, entry, apply_event=events.append)
+
+        self.assertTrue(applied)
+        self.assertEqual(events, [{
+            "state": "working",
+            "event": "tool/call",
+            "agent": "dsh",
+            "session_id": "123e4567-e89b-12d3-a456-426614174000",
+        }])
+
+    def test_dsh_jsonl_turn_end_line_resolves_state(self) -> None:
+        events: list[dict[str, object]] = []
+        entry = bridge._DshLogEntry(session_id="s1")
+        line = json.dumps({"type": "turn/end", "data": {"reason": {"kind": "error"}}})
+
+        applied = bridge._dsh_process_jsonl_line(line, entry, apply_event=events.append)
+
+        self.assertTrue(applied)
+        self.assertEqual(events[0]["state"], "error")
+
+    def test_dsh_jsonl_approval_asked_maps_to_notification(self) -> None:
+        events: list[dict[str, object]] = []
+        entry = bridge._DshLogEntry(session_id="s1")
+        line = json.dumps({"type": "approval/asked", "data": {"toolName": "pwsh"}})
+
+        applied = bridge._dsh_process_jsonl_line(line, entry, apply_event=events.append)
+
+        self.assertTrue(applied)
+        self.assertEqual(events[0]["state"], "notification")
+
+    def test_dsh_session_id_parsed_from_dir_name(self) -> None:
+        path = Path("sessions/--X-workspace--/session-123e4567-e89b-12d3-a456-426614174000/session.jsonl.zstd")
+        self.assertEqual(
+            bridge._dsh_session_id_from_path(path),
+            "123e4567-e89b-12d3-a456-426614174000",
+        )
+        self.assertEqual(bridge._dsh_session_id_from_path(Path("sessions/x/y/session.jsonl")), "")
+
+    def test_dsh_session_id_normalized_without_session_prefix(self) -> None:
+        session_id = bridge._pet_session_id(
+            {"session_id": "session-123e4567-e89b-12d3-a456-426614174000"},
+            "dsh",
+        )
+        self.assertEqual(session_id, "dsh:123e4567-e89b-12d3-a456-426614174000")
+
+    def test_dsh_jsonl_poll_reads_zstd_appends(self) -> None:
+        if bridge._zstandard is None:
+            self.skipTest("zstandard not available")
+        events: list[dict[str, object]] = []
+        bridge._dsh_log_entries.clear()
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                session_dir = (
+                    Path(tmp)
+                    / "--X-workspace--"
+                    / "session-123e4567-e89b-12d3-a456-426614174000"
+                )
+                session_dir.mkdir(parents=True)
+                transcript = session_dir / "session.jsonl.zstd"
+                cctx = bridge._zstandard.ZstdCompressor()
+                initial = b'{"type":"user/message","data":{"role":"user"}}\n'
+                transcript.write_bytes(cctx.compress(initial))
+
+                bridge._dsh_log_poll(root=Path(tmp), bootstrap=True, apply_event=events.append)
+                self.assertEqual(events, [])
+
+                appended = b'{"type":"tool/call","data":{"name":"pwsh"}}\n'
+                transcript.write_bytes(cctx.compress(initial + appended))
+
+                applied = bridge._dsh_log_poll(root=Path(tmp), apply_event=events.append)
+
+                self.assertEqual(applied, 1)
+                self.assertEqual(events[0]["state"], "working")
+                self.assertEqual(events[0]["event"], "tool/call")
+                self.assertEqual(events[0]["agent"], "dsh")
+                self.assertEqual(events[0]["session_id"], "123e4567-e89b-12d3-a456-426614174000")
+        finally:
+            bridge._dsh_log_entries.clear()
+
+    def test_dsh_jsonl_poll_reads_raw_jsonl_mode(self) -> None:
+        events: list[dict[str, object]] = []
+        bridge._dsh_log_entries.clear()
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                session_dir = (
+                    Path(tmp)
+                    / "--X-workspace--"
+                    / "session-123e4567-e89b-12d3-a456-426614174000"
+                )
+                session_dir.mkdir(parents=True)
+                transcript = session_dir / "session.jsonl"
+                transcript.write_text(
+                    '{"type":"user/message","data":{"role":"user"}}\n'
+                    '{"type":"tool/call","data":{"name":"pwsh"}}\n',
+                    encoding="utf-8",
+                )
+
+                applied = bridge._dsh_log_poll(root=Path(tmp), apply_event=events.append)
+
+                self.assertEqual(applied, 2)
+                self.assertEqual(events[0]["state"], "thinking")
+                self.assertEqual(events[1]["state"], "working")
+        finally:
+            bridge._dsh_log_entries.clear()
+
+    def test_dsh_jsonl_poll_reads_multiframe_zstd_like_real_files(self) -> None:
+        # Real dsh session files are several concatenated zstd frames (one per
+        # durable publish) whose frame headers omit the content size — like
+        # ZstdCompressor(write_content_size=False). Regression: single-shot
+        # decompress() raises on such frames and a single decompressobj()
+        # decodes only the first frame.
+        if bridge._zstandard is None:
+            self.skipTest("zstandard not available")
+        events: list[dict[str, object]] = []
+        bridge._dsh_log_entries.clear()
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                session_dir = (
+                    Path(tmp)
+                    / "--X-workspace--"
+                    / "session-123e4567-e89b-12d3-a456-426614174000"
+                )
+                session_dir.mkdir(parents=True)
+                transcript = session_dir / "session.jsonl.zstd"
+                cctx = bridge._zstandard.ZstdCompressor(write_content_size=False)
+
+                frame1 = cctx.compress(b'{"type":"session","version":0,"id":"session-123e4567-e89b-12d3-a456-426614174000"}\n')
+                frame2 = cctx.compress(b'{"type":"user/message","data":{"role":"user"}}\n')
+                frame3 = cctx.compress(b'{"type":"tool/call","data":{"name":"pwsh"}}\n')
+                transcript.write_bytes(frame1 + frame2 + frame3)
+
+                bridge._dsh_log_poll(root=Path(tmp), bootstrap=True, apply_event=events.append)
+                self.assertEqual(events, [])
+
+                frame4 = cctx.compress(b'{"type":"tool/result","data":{"name":"pwsh"}}\n')
+                with transcript.open("ab") as fh:
+                    fh.write(frame4)
+
+                applied = bridge._dsh_log_poll(root=Path(tmp), apply_event=events.append)
+
+                self.assertEqual(applied, 1)
+                self.assertEqual(events[0]["event"], "tool/result")
+                self.assertEqual(events[0]["state"], "working")
+        finally:
+            bridge._dsh_log_entries.clear()
+
 
 class PetRuntimeTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -410,6 +591,26 @@ class PetRuntimeTests(unittest.TestCase):
 
         self.assertEqual(state.state, "working")
         self.assertEqual(state.asset, "clawd-working-typing.svg")
+
+    def test_dsh_turn_end_resolves_based_on_tool_use(self) -> None:
+        bridge._apply_pet_event({"event": "user/message", "state": "thinking", "agent": "dsh", "session_id": "s1"})
+
+        state = bridge._apply_pet_event({"event": "turn/end", "state": "codex-turn-end", "agent": "dsh", "session_id": "s1"})
+        self.assertEqual(state.state, "idle")
+
+        bridge._reset_pet_state_for_tests()
+        bridge._apply_pet_event({"event": "tool/call", "state": "working", "agent": "dsh", "session_id": "s2"})
+
+        state = bridge._apply_pet_event({"event": "turn/end", "state": "codex-turn-end", "agent": "dsh", "session_id": "s2"})
+        self.assertEqual(state.state, "attention")
+
+    def test_dsh_work_counts_toward_session_tiers(self) -> None:
+        bridge._apply_pet_event({"event": "tool/call", "state": "working", "agent": "dsh", "session_id": "s1"})
+
+        state = bridge._apply_pet_event({"event": "PostToolUse", "agent": "codex", "session_id": "s2"})
+
+        self.assertEqual(state.state, "working")
+        self.assertEqual(state.asset, "clawd-headphones-groove.svg")
 
 
 if __name__ == "__main__":

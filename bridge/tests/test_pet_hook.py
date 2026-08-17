@@ -103,6 +103,42 @@ class PetHookTests(unittest.TestCase):
         self.assertEqual(body["agent"], "codex")
         self.assertEqual(body["session_id"], "codex:123e4567-e89b-12d3-a456-426614174000")
 
+    def test_dsh_events_map_via_cc_names(self) -> None:
+        prompt = self.run_hook(["UserPromptSubmit", "--agent", "dsh"])
+        _HookCaptureHandler.posts = []
+        tool = self.run_hook(["PreToolUse", "--agent", "dsh"])
+        _HookCaptureHandler.posts = []
+        failure = self.run_hook(["PostToolUseFailure", "--agent", "dsh"])
+
+        self.assertEqual(prompt["state"], "thinking")
+        self.assertEqual(prompt["agent"], "dsh")
+        self.assertEqual(tool["state"], "working")
+        self.assertEqual(failure["state"], "error")
+
+    def test_dsh_stop_is_turn_end_and_namespaced_session(self) -> None:
+        body = self.run_hook(["Stop"], {
+            "session_id": "session-123e4567-e89b-12d3-a456-426614174000",
+            "transcript_path": (
+                "C:/Users/<user>/.dsh/sessions/--X-workspace--/"
+                "session-123e4567-e89b-12d3-a456-426614174000/session.jsonl.zstd"
+            ),
+        })
+
+        self.assertEqual(body["state"], "codex-turn-end")
+        self.assertEqual(body["agent"], "dsh")
+        self.assertEqual(body["session_id"], "dsh:123e4567-e89b-12d3-a456-426614174000")
+
+    def test_dsh_payload_sniffed_from_transcript(self) -> None:
+        body = self.run_hook(["PostToolUse"], {
+            "transcript_path": (
+                "C:/Users/<user>/.dsh/sessions/--X-workspace--/"
+                "session-123e4567-e89b-12d3-a456-426614174000/session.jsonl.zstd"
+            ),
+        })
+
+        self.assertEqual(body["agent"], "dsh")
+        self.assertEqual(body["session_id"], "dsh:123e4567-e89b-12d3-a456-426614174000")
+
 
 if __name__ == "__main__":
     unittest.main()
