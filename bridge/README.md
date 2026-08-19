@@ -207,15 +207,21 @@ independent paths**, both idempotent and coexisting:
 2. **Hooks bridge (backup)** — dsh's `@deepseek-ai/dsh-hooks-claude-code`
    plugin runs this project's `bridge/dsh_hooks.json` (Claude Code dialect)
    on the harness interception points and forwards events to
-   `pet_hook.js --agent dsh`. ⚠️ **Limitation:** the harness executes hook
-   commands under the session's sandbox mode, and on hosts without a usable
-   sandbox backend (no bubblewrap/Landlock on Linux, no sandbox-exec on
-   macOS, no ACL restricted-token runner on Windows) it **refuses to run
-   commands unconfined** — the hook is recorded as `hook/result` with
-   decision `pass` but never executes. The only way to make the backup path
-   fire on such hosts is to switch the harness's sandbox mode to
-   `danger-full-access` (a security decision; the JSONL poller needs none of
-   this, which is why it is the primary path).
+   `pet_hook.js --agent dsh`. ⚠️ **Hosts without a usable sandbox backend:**
+   the harness executes hook commands under the session's sandbox mode; on
+   Windows the ACL sandbox needs to grant a workspace write ACE on the
+   session working directory, which requires the caller to own the directory
+   (owner-implicit WRITE_DAC). On protected directories (e.g. install
+   folders owned by `BUILTIN\Administrators`) the grant fails with
+   `SetNamedSecurityInfoW failed (Win32 5)` and the hook is recorded as
+   `hook/result` decision `pass` but never executes. **Fix (one-time, per
+   directory, elevated):** materialize the workspace write ACE in advance —
+   derive the SID with `workspaceWriteSid()` (sha256 of the canonical path,
+   `packages/sandbox/sandbox-windows-acl`) and add an
+   `(OI)(CI)` ACE with mask `0x00110156` (the sandbox's GRANT_MASK) to the
+   directory; the sandbox's exact-ACE skip then never touches the DACL
+   again. `X:\DeepSeek Harness\deepseek-harness-desktop`, its `DSH Desktop`
+   subfolder, and `X:\DSH WorkSpace` were fixed this way on the dev machine.
 
 Event → state mapping (poller, `bridge.py` `DSH_JSONL_EVENT_STATES`):
 
