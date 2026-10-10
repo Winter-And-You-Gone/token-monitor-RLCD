@@ -13,7 +13,15 @@ CONFIG_FATFS_LFN_HEAP=y
 CONFIG_FREERTOS_HZ=1000
 
 # LVGL: fonts used by the dashboard (Montserrat includes ° ; built-in)
+#
+# LVGL heap. LV_MEM_SIZE (bytes) is the name v9.6+ uses; LV_MEM_SIZE_KILOBYTES is
+# the pre-9.6 name and v9.6 keeps it only as a deprecated no-op. Set BOTH so the
+# intended size survives a component version change - with only the old key,
+# v9.6 silently falls back to its 64 KB default (fonts/animations/objects then
+# fail to allocate and the UI renders wrong and stops animating).
+CONFIG_LV_MEM_SIZE=131072
 CONFIG_LV_MEM_SIZE_KILOBYTES=128
+CONFIG_LV_FONT_MONTSERRAT_12=y
 CONFIG_LV_FONT_MONTSERRAT_14=y
 CONFIG_LV_FONT_MONTSERRAT_16=y
 CONFIG_LV_FONT_MONTSERRAT_20=y

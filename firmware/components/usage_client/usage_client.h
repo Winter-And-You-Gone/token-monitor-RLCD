@@ -11,14 +11,14 @@ extern "C" {
 
 typedef struct {
     int64_t tokens_used;
-    double  cost_usd;
+    double  cost;                // in the owning report/agent's currency
     int32_t percent_used_x100;   // -1 if bridge can't compute
 } usage_bucket_t;
 
 typedef struct {
     char     model[40];
     int64_t  tokens;
-    double   cost_usd;
+    double   cost;               // in the owning agent's currency
 } usage_model_t;
 
 #define USAGE_MAX_MODELS 5
@@ -55,6 +55,7 @@ typedef struct {
 
 typedef struct {
     char    agent[16];
+    char    currency[4];         // "USD" / "CNY" for the cost columns
     usage_bucket_t today;
     usage_bucket_t month;
     usage_bucket_t lifetime;
@@ -63,11 +64,11 @@ typedef struct {
     bool           valid;
 } usage_other_agent_t;
 
-#define RADAR_MAX_POINTS 11
+#define RADAR_MAX_POINTS 22
 #define RADAR_MAX_HISTORY 12
 
 typedef struct {
-    char    model[12];   // "sol", "terra", "luna", "gpt-5.5", "deepseek"
+    char    model[12];   // "astra", "sol", "terra", "luna", "deepseek"
     char    effort[8];   // "ultra", "max", "xhigh"
     double  iq;
     double  price;

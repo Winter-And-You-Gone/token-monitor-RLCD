@@ -1,11 +1,12 @@
 // Dashboard: header (time | indoor | weather) plus a lower carousel:
 //   1. CLAUDE + DEEPSEEK
 //   2. DEEPSEEK + CODEX
-//   3. CODEX + CLAUDE
-// The fourth/fifth panels duplicate the first two so the wrap always moves left.
+//   3. CODEX + ZCODE
+//   4. ZCODE + CLAUDE (wrap)
+// The fifth/sixth panels duplicate the first two so the wrap always moves left.
 //
 // 1-bit panel: everything is pure black/white. Amounts use a bold ASCII font
-// (font_amt14); the CNY balance uses a bold ¥-capable font (font_bal28).
+// (font_amt14).
 
 #include "ui_app.h"
 #include "icons.h"
@@ -18,7 +19,6 @@
 #include <time.h>
 
 LV_FONT_DECLARE(font_amt14);   // DejaVuSans-Bold 14 (ascii + °)
-LV_FONT_DECLARE(font_bal28);   // DejaVuSans-Bold 28 (digits . ¥)
 LV_FONT_DECLARE(font_cn14);    // compact local Chinese UI font
 
 #define INK   lv_color_black()
@@ -27,9 +27,9 @@ LV_FONT_DECLARE(font_cn14);    // compact local Chinese UI font
 #define VIEW_W 400
 #define SLIDE_H 222
 #define PANEL_W 200
-#define UNIQUE_PANELS 3
-#define TRACK_PANELS 5
-#define MAX_AGENT_PANELS 4
+#define UNIQUE_PANELS 4
+#define TRACK_PANELS 6
+#define MAX_AGENT_PANELS 5
 #define CAROUSEL_TIMER_MS 33
 #define CAROUSEL_HOLD_TICKS 115
 #define CAROUSEL_ANIM_TICKS 15
@@ -49,9 +49,11 @@ typedef struct {
 } claude_panel_t;
 
 typedef struct {
-    lv_obj_t *lbl_balance;
-    lv_obj_t *val[3];
-} deepseek_panel_t;
+    lv_obj_t *model[3];
+    lv_obj_t *model_tok[3];
+    lv_obj_t *tok[3];
+    lv_obj_t *cost[3];
+} dsh_panel_t;
 
 typedef struct {
     lv_obj_t *model[3];
@@ -60,10 +62,18 @@ typedef struct {
     lv_obj_t *cost[3];
 } codex_panel_t;
 
+typedef struct {
+    lv_obj_t *model[3];
+    lv_obj_t *model_tok[3];
+    lv_obj_t *tok[3];
+    lv_obj_t *cost[3];
+} zcode_panel_t;
+
 typedef enum {
     AGENT_CLAUDE,
-    AGENT_DEEPSEEK,
+    AGENT_DSH,
     AGENT_CODEX,
+    AGENT_ZCODE,
 } agent_kind_t;
 
 typedef enum {
@@ -78,43 +88,45 @@ typedef struct {
     lv_obj_t *model;
     lv_obj_t *iq;
     lv_obj_t *price;
-    lv_obj_t *time;
-    lv_obj_t *pass;
-    lv_obj_t *sparkline;
+    lv_obj_t *time;      /* minutes label */
 } radar_cell_t;
 
 static lv_obj_t *lbl_time, *lbl_indoor, *img_pet, *img_pet_eyes, *img_wx, *lbl_wx_temp, *lbl_wx_city, *lbl_status;
 static lv_obj_t *lbl_battery_title, *lbl_battery_pct, *battery_body, *battery_fill, *battery_tip;
 static lv_obj_t *pet_big_page, *img_pet_big, *img_pet_big_eyes;
 static lv_obj_t *img_radar_pet = NULL;
+static lv_obj_t *img_earth_anim = NULL;
+static lv_timer_t *earth_anim_timer = NULL;
+static uint16_t earth_anim_frame = 0;
+static lv_obj_t *img_moon_anim = NULL;
+static lv_timer_t *moon_anim_timer = NULL;
+static uint16_t moon_anim_frame = 0;
+static lv_obj_t *img_astra_anim = NULL;
+static lv_timer_t *astra_anim_timer = NULL;
+static uint16_t astra_anim_frame = 0;
 static lv_obj_t *img_sun_anim = NULL;
 static lv_timer_t *sun_anim_timer = NULL;
 static uint16_t sun_anim_frame = 0;
 static lv_obj_t *img_moon_body = NULL;
 static lv_obj_t *img_moon_rim = NULL;
-static lv_obj_t *img_moon_anim = NULL;
-static lv_timer_t *moon_anim_timer = NULL;
-static uint16_t moon_anim_frame = 0;
-static lv_obj_t *img_earth_anim = NULL;
-static lv_timer_t *earth_anim_timer = NULL;
-static uint16_t earth_anim_frame = 0;
 static lv_obj_t *img_whale_anim = NULL;
 static lv_timer_t *whale_anim_timer = NULL;
 static uint16_t whale_anim_frame = 0;
 static lv_obj_t *radar_page, *lbl_radar_updated;
-static radar_cell_t radar_cells[4][3];
+static radar_cell_t radar_cells[4][6];
 static page_kind_t g_current_page = PAGE_TOKEN;
 static lv_obj_t *g_overlays[PAGE_COUNT];
 static uint32_t radar_last_update_tick = 0;
 static lv_timer_t *radar_timer = NULL;
-static lv_point_precise_t radar_spark_pts[4][3][RADAR_MAX_HISTORY];
-#define RADAR_REFRESH_SEC 600
+#define RADAR_REFRESH_SEC 180
 static claude_panel_t   claude_panels[MAX_AGENT_PANELS];
-static deepseek_panel_t deepseek_panels[MAX_AGENT_PANELS];
+static dsh_panel_t      dsh_panels[MAX_AGENT_PANELS];
 static codex_panel_t    codex_panels[MAX_AGENT_PANELS];
+static zcode_panel_t    zcode_panels[MAX_AGENT_PANELS];
 static int claude_panel_count;
-static int deepseek_panel_count;
+static int dsh_panel_count;
 static int codex_panel_count;
+static int zcode_panel_count;
 static lv_obj_t *carousel_track;
 static lv_obj_t *carousel_split[2];
 static lv_timer_t *carousel_timer;
@@ -141,6 +153,11 @@ static const lv_image_dsc_t *pet_big_last_eye_frame;
 
 static void fmt_tok(char *o, size_t n, int64_t t)
 {
+    /* Token counts are never negative. Clamping also bounds the %lld branch
+     * below to 0..999, so the 16-byte caller buffers cannot be truncated.
+     * Without it, -Os + -Werror=format-truncation rejects the file (a negative
+     * int64 needs up to 20 digits + NUL, but the buffers are only 16). */
+    if (t < 0) t = 0;
     if      (t >= 1000000000LL) snprintf(o, n, "%.1fB", t / 1e9);
     else if (t >= 10000000LL)   snprintf(o, n, "%.0fM", t / 1e6);
     else if (t >= 1000000LL)    snprintf(o, n, "%.1fM", t / 1e6);
@@ -148,11 +165,12 @@ static void fmt_tok(char *o, size_t n, int64_t t)
     else                        snprintf(o, n, "%lld", (long long) t);
 }
 
-static void fmt_cost(char *o, size_t n, double c)
+static void fmt_cost(char *o, size_t n, double c, bool cny)
 {
-    if      (c < 100)  snprintf(o, n, "$%.2f", c);
-    else if (c < 1000) snprintf(o, n, "$%.0f", c);
-    else               snprintf(o, n, "$%.1fk", c / 1000.0);
+    const char *sym = cny ? "\xEF\xBF\xA5" : "$";  // fullwidth yen (U+FFE5) / dollar
+    if      (c < 100)  snprintf(o, n, "%s%.2f", sym, c);
+    else if (c < 1000) snprintf(o, n, "%s%.0f", sym, c);
+    else               snprintf(o, n, "%s%.1fk", sym, c / 1000.0);
 }
 
 static lv_obj_t *mkbare(lv_obj_t *p, int x, int y, int w, int h)
@@ -224,6 +242,7 @@ static lv_obj_t *mkmoon_body(lv_obj_t *p, int x, int y)
     lv_obj_set_style_radius(o, 24, 0);
     return o;
 }
+
 
 static lv_obj_t *mkicon(lv_obj_t *p, int x, int y, const lv_image_dsc_t *src)
 {
@@ -367,22 +386,25 @@ static void mk_claude_panel(lv_obj_t *slide, int x)
     }
 }
 
-static void mk_deepseek_panel(lv_obj_t *slide, int x)
+static void mk_dsh_panel(lv_obj_t *slide, int x)
 {
-    if (deepseek_panel_count >= MAX_AGENT_PANELS) return;
-    deepseek_panel_t *p = &deepseek_panels[deepseek_panel_count++];
+    if (dsh_panel_count >= MAX_AGENT_PANELS) return;
+    dsh_panel_t *p = &dsh_panels[dsh_panel_count++];
 
     mkicon(slide, x + 10, 6, &icon_deepseek);
     mklabel(slide, x + 50, 10, &lv_font_montserrat_20, "DEEPSEEK");
-    mkalign(slide, x + 12, 38, 176, LV_TEXT_ALIGN_CENTER, FONT_CN14, "可用");
-    p->lbl_balance = mkalign(slide, x + 12, 62, 176, LV_TEXT_ALIGN_CENTER, &font_bal28, "--");
+    mk_model_rows(slide, x, p->model, p->model_tok);
     mkdiv(slide, x + 12, 118, 178, 1);
+    const int row_y0 = 126;
+    const int row_gap = 28;
 
-    const char *rows[3] = {"送值", "充值", "今日token"};
+    const char *rows[3] = {"今日", "本月", "合计"};
     for (int i = 0; i < 3; ++i) {
-        int y = 126 + i * 28;
+        int y = row_y0 + i * row_gap;
         mklabel(slide, x + 12, y, FONT_CN14, rows[i]);
-        p->val[i] = mkalign(slide, x + 94, y, 94, LV_TEXT_ALIGN_RIGHT, &font_amt14, "-");
+        p->tok[i]  = mkalign(slide, x + 64, y, 62, LV_TEXT_ALIGN_RIGHT, &font_amt14, "-");
+        // CNY amounts render the fullwidth yen sign, which only font_cn14 has.
+        p->cost[i] = mkalign(slide, x + 128, y, 64, LV_TEXT_ALIGN_RIGHT, FONT_CN14, "-");
     }
 }
 
@@ -395,7 +417,6 @@ static void mk_codex_panel(lv_obj_t *slide, int x)
     mklabel(slide, x + 50, 10, &lv_font_montserrat_20, "CODEX");
     mk_model_rows(slide, x, p->model, p->model_tok);
     mkdiv(slide, x + 12, 118, 178, 1);
-
     const char *rows[3] = {"今日", "本月", "合计"};
     for (int i = 0; i < 3; ++i) {
         int y = 126 + i * 28;
@@ -405,10 +426,33 @@ static void mk_codex_panel(lv_obj_t *slide, int x)
     }
 }
 
+static void mk_zcode_panel(lv_obj_t *slide, int x)
+{
+    if (zcode_panel_count >= MAX_AGENT_PANELS) return;
+    zcode_panel_t *p = &zcode_panels[zcode_panel_count++];
+
+    mkicon(slide, x + 10, 6, &icon_zcode);
+    mklabel(slide, x + 50, 10, &lv_font_montserrat_20, "ZCODE");
+    mk_model_rows(slide, x, p->model, p->model_tok);
+    mkdiv(slide, x + 12, 118, 178, 1);
+    const int row_y0 = 126;
+    const int row_gap = 28;
+
+    const char *rows[3] = {"今日", "本月", "合计"};
+    for (int i = 0; i < 3; ++i) {
+        int y = row_y0 + i * row_gap;
+        mklabel(slide, x + 12, y, FONT_CN14, rows[i]);
+        p->tok[i]  = mkalign(slide, x + 64, y, 62, LV_TEXT_ALIGN_RIGHT, &font_amt14, "-");
+        // CNY amounts render the fullwidth yen sign, which only font_cn14 has.
+        p->cost[i] = mkalign(slide, x + 128, y, 64, LV_TEXT_ALIGN_RIGHT, FONT_CN14, "-");
+    }
+}
+
 static void mk_agent_panel(lv_obj_t *slide, int x, agent_kind_t kind)
 {
     if (kind == AGENT_CLAUDE) mk_claude_panel(slide, x);
-    else if (kind == AGENT_DEEPSEEK) mk_deepseek_panel(slide, x);
+    else if (kind == AGENT_DSH) mk_dsh_panel(slide, x);
+    else if (kind == AGENT_ZCODE) mk_zcode_panel(slide, x);
     else mk_codex_panel(slide, x);
 }
 
@@ -465,8 +509,8 @@ static void carousel_timer_cb(lv_timer_t *timer)
 static void mk_pet_big_page(lv_obj_t *screen)
 {
     const pet_anim_sequence_t *idle = ui_pet_big_anim_idle();
-    int pet_w = idle ? idle->width : 184;
-    int pet_h = idle ? idle->height : 184;
+    int pet_w = idle ? idle->width : 256;
+    int pet_h = idle ? idle->height : 256;
     int pet_x = (VIEW_W - pet_w) / 2;
     int pet_y = (PET_BIG_PAGE_H - pet_h) / 2;
 
@@ -487,17 +531,19 @@ static lv_obj_t *mk_radar_cell(lv_obj_t *p, int x, int y, int w, int h, radar_ce
     lv_obj_set_style_border_width(c, 1, 0);
     lv_obj_set_style_radius(c, 0, 0);
 
+    /* Layout (3x3 grid cells, narrow width x 62):
+     *   model+effort
+     *   103.3
+     *   $9.8
+     *   13min
+     */
+    /* Grid cells have no model line (row/col headers carry that info), so the
+     * IQ value sits near the top. Row-4 cells reposition these after creation. */
     cell->cell = c;
-    cell->model    = mkalign(c, 4, 1, w - 8, LV_TEXT_ALIGN_LEFT, &font_amt14, "");
-    cell->iq       = mklabel(c, 6, 2, &lv_font_montserrat_20, "0");
-    cell->price    = mkalign(c, 6, 26, 50, LV_TEXT_ALIGN_LEFT, &font_amt14, "");
-    cell->time     = mkalign(c, 56, 26, w - 60, LV_TEXT_ALIGN_RIGHT, &font_amt14, "");
-    cell->pass     = mkalign(c, 4, 42, w - 8, LV_TEXT_ALIGN_LEFT, FONT_CN14, "");
-    cell->sparkline = lv_line_create(c);
-    lv_obj_set_pos(cell->sparkline, 58, 49);
-    lv_obj_set_style_line_color(cell->sparkline, INK, 0);
-    lv_obj_set_style_line_width(cell->sparkline, 1, 0);
-    lv_obj_add_flag(cell->sparkline, LV_OBJ_FLAG_HIDDEN);
+    cell->model  = mkalign(c, 4, 1, w - 8, LV_TEXT_ALIGN_LEFT, &font_amt14, "");
+    cell->iq     = mklabel(c, 4, 5, &lv_font_montserrat_16, "0");
+    cell->price  = mkalign(c, 4, 24, w - 8, LV_TEXT_ALIGN_LEFT, &font_amt14, "");
+    cell->time   = mkalign(c, 4, 24 + 14, w - 8, LV_TEXT_ALIGN_LEFT, &lv_font_montserrat_12, "");
     return c;
 }
 
@@ -512,97 +558,90 @@ static void mk_radar_page(lv_obj_t *screen)
     lbl_radar_updated = mkalign(radar_page, 120, 8, 272, LV_TEXT_ALIGN_RIGHT, FONT_CN14, "");
     mkdiv(radar_page, 8, 26, 384, 2);
 
-    static const char *efforts[3] = {"ULTRA", "MAX", "XHIGH"};
-    static const int col_x[3] = {60, 172, 284};
-    static const int col_w = 108;
-    for (int i = 0; i < 3; ++i)
+    static const char *efforts[6] = {"ULTRA", "MAX", "XHIGH", "HIGH", "MEDIUM", "LOW"};
+    /* Six effort columns (ULTRA..LOW), narrow cells; the extra page margin
+     * keeps the icon column clear. */
+    static const int col_x[6] = {60, 115, 170, 225, 280, 335};
+    static const int col_w = 53;
+    for (int i = 0; i < 6; ++i)
         mkalign(radar_page, col_x[i], 30, col_w, LV_TEXT_ALIGN_CENTER, &font_amt14, efforts[i]);
+    /* GPT6 series tag in the label gutter, above the Astra row name */
+    mkalign(radar_page, 4, 30, 48, LV_TEXT_ALIGN_CENTER, &font_amt14, "GPT6");
 
-    static const lv_image_dsc_t *model_icons[3] = {&icon_sun, &icon_earth, &icon_moon};
-    static const char *model_names[3] = {"Sol", "Terra", "Luna"};
+    static const lv_image_dsc_t *model_icons[3] = {NULL, &icon_sun, &icon_earth};
+    static const char *model_names[3] = {"Astra", "Sol", "Terra"};
     static const int row_y[3] = {48, 112, 176};
     static const int row_h = 62;
 
     for (int m = 0; m < 3; ++m) {
         mkalign(radar_page, 4, row_y[m] - 4, 48, LV_TEXT_ALIGN_CENTER, &font_amt14, model_names[m]);
-        if (m == 0 && icon_sun_anim_count > 0) {
+        if (m == 0 && icon_astra_anim_count > 0) {
+            /* Astra: rotating galaxy (counter-clockwise, Milky-Way convention) */
+            img_astra_anim = mkicon(radar_page, 4, row_y[m] + 12, icon_astra_anim[0]);
+        } else if (m == 1 && icon_sun_anim_count > 0) {
             /* Sol: animated sun (rotate+pulse) */
             img_sun_anim = mkicon(radar_page, 4, row_y[m] + 12, icon_sun_anim[0]);
-        } else if (m == 2 && icon_moon_anim_count > 0) {
-            /* Luna: white body with black phase/crater overlay */
-            img_moon_body = mkmoon_body(radar_page, 4, row_y[m] + 12);
-            img_moon_rim = mkicon(radar_page, 4, row_y[m] + 12, &icon_moon_rim);
-            img_moon_anim = mkicon(radar_page, 4, row_y[m] + 12, icon_moon_anim[0]);
-        } else if (m == 1 && icon_earth_anim_count > 0) {
+        } else if (m == 2 && icon_earth_anim_count > 0) {
             /* Terra: geographic west-to-east rotation */
             img_earth_anim = mkicon(radar_page, 4, row_y[m] + 12, icon_earth_anim[0]);
-        } else {
+        } else if (model_icons[m]) {
             mkicon(radar_page, 4, row_y[m] + 12, model_icons[m]);
         }
-        for (int e = 0; e < 3; ++e)
+        for (int e = 0; e < 6; ++e)
             mk_radar_cell(radar_page, col_x[e], row_y[m], col_w, row_h, &radar_cells[m][e]);
     }
 
-    /* Row 4: DeepSeek (left) + GPT-5.5 (right), wide short cells */
+    /* Row 4: DeepSeek + Luna max + GPT-5.6-sol max, three equal cells */
     {
-        const int extra_y = 240, extra_h = 40;
-        /* Text widths (font_amt14): "DeepSeek-V4-Flash MAX"=193.7px,
-         * "GPT-5.5 XHIGH"=117.7px. Allocate 204/126 (204+2+126=332,
-         * matches upper 3x3 span x60..392) with ~10px/8px slack. */
-        const int extra_w[2] = {204, 126};
-        const int gap = 2;
-        int x = 60;  /* left-align cells with the upper 3x3 grid */
-        for (int k = 0; k < 2; ++k) {
-            mk_radar_cell(radar_page, x, extra_y, extra_w[k], extra_h, &radar_cells[3][k]);
-            x += extra_w[k] + gap;
-        }
+        /* Footer line is gone; the row fills down to 3px above the page
+         * bottom, matching the 3px gaps between the rows above. */
+        const int extra_y = 240, extra_h = 58;
+        /* Each cell spans two grid columns + the 2px gap (53*2+2 = 108),
+         * anchored to grid columns 0/2/4 so cell borders line up pixel-perfect
+         * with the rows above (same span as the terra pet cell). */
+        const int extra_w = col_w * 2 + 2;
+        for (int k = 0; k < 3; ++k)
+            mk_radar_cell(radar_page, col_x[k * 2], extra_y, extra_w, extra_h,
+                          &radar_cells[3][k]);
         /* DeepSeek whale logo in the freed left column (animated) */
         if (icon_whale_anim_count > 0)
             img_whale_anim = mkicon(radar_page, (60 - 48) / 2, extra_y + (extra_h - 48) / 2,
                                     icon_whale_anim[0]);
         else
-            mkicon(radar_page, (60 - 34) / 2, extra_y + (extra_h - 34) / 2, &icon_deepseek);
-        /* DeepSeek: model+effort on top, IQ+price+sparkline below */
-        radar_cell_t *ds = &radar_cells[3][0];
-        lv_label_set_text(ds->model, "DeepSeek-V4-Flash MAX");
-        lv_obj_set_pos(ds->model, 4, 1);
-        lv_obj_set_width(ds->model, extra_w[0] - 8);
-        lv_obj_set_pos(ds->iq, 6, 16);
-        lv_obj_set_pos(ds->price, 58, 20);
-        lv_obj_set_width(ds->price, 80);
-        lv_obj_set_pos(ds->sparkline, 104, 24);  /* fills the right side of the cell */
-        lv_obj_set_style_line_color(ds->sparkline, INK, 0);
-        lv_obj_set_style_line_width(ds->sparkline, 1, 0);
-        lv_obj_add_flag(ds->time, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(ds->pass, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(ds->sparkline, LV_OBJ_FLAG_HIDDEN);
-        /* GPT-5.5: model+effort on top, IQ+price below */
-        radar_cell_t *g5 = &radar_cells[3][1];
-        lv_label_set_text(g5->model, "GPT-5.5 XHIGH");
-        lv_obj_set_pos(g5->model, 4, 1);
-        lv_obj_set_width(g5->model, extra_w[1] - 8);
-        lv_obj_set_pos(g5->iq, 6, 16);
-        lv_obj_set_pos(g5->price, 70, 20);  /* two spaces clear of the IQ */
-        lv_obj_set_width(g5->price, 56);
-        lv_obj_add_flag(g5->time, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(g5->pass, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(g5->sparkline, LV_OBJ_FLAG_HIDDEN);
-        /* spare right cell of row 4 stays empty */
+            mkicon(radar_page, (60 - 39) / 2, extra_y + (extra_h - 39) / 2, &icon_deepseek);
+        /* Row-4 cells: model on top, big IQ as the hero line, price tucked
+         * into the bottom-right corner below it - "108.5" @28px (~70px) plus
+         * "$18.1" (~35px) don't fit the 100px cell on one line. */
+        for (int k = 0; k < 3; ++k) {
+            radar_cell_t *c = &radar_cells[3][k];
+            lv_obj_set_pos(c->iq, 4, 15);
+            lv_obj_set_style_text_font(c->iq, &lv_font_montserrat_28, 0);
+            lv_obj_set_pos(c->price, 4, 42);
+            lv_obj_set_width(c->price, extra_w - 8);
+            lv_obj_set_style_text_align(c->price, LV_TEXT_ALIGN_RIGHT, 0);
+            lv_obj_add_flag(c->time, LV_OBJ_FLAG_HIDDEN);
+        }
     }
-    mkalign(radar_page, 8, 282, 384, LV_TEXT_ALIGN_CENTER, FONT_CN14,
-            "数据源:codexradar.com - 112 题基准测试 - 每10分钟刷新");
-
     lv_obj_add_flag(radar_page, LV_OBJ_FLAG_HIDDEN);
 
-    /* Luna Ultra cell: replace N/A labels with a mini pet animation */
+    /* Terra MEDIUM+LOW cells: merge into one wide pet cell (the crab replaces
+     * the two least-interesting effort values). Cell [2][4] spans both columns;
+     * [2][5] is left borderless underneath. */
     {
-        radar_cell_t *c = &radar_cells[2][0];
+        radar_cell_t *c = &radar_cells[2][4];
+        lv_obj_set_width(c->cell, col_w * 2 + 2);
         lv_obj_add_flag(c->iq, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(c->price, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(c->time, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(c->pass, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(c->sparkline, LV_OBJ_FLAG_HIDDEN);
-        img_radar_pet = mkpet_sized(c->cell, (col_w - 56) / 2, (row_h - 56) / 2, 56, 56);
+        radar_cell_t *s = &radar_cells[2][5];
+        lv_obj_set_style_border_width(s->cell, 0, 0);
+        lv_obj_set_style_bg_opa(s->cell, LV_OPA_TRANSP, 0);
+        lv_obj_add_flag(s->iq, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(s->price, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(s->time, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_style_bg_color(c->cell, WHITE, 0);
+        lv_obj_set_style_border_width(c->cell, 1, 0);
+        img_radar_pet = mkpet_sized(c->cell, (col_w * 2 + 2 - 56) / 2, (row_h - 56) / 2, 56, 56);
     }
 }
 
@@ -627,23 +666,20 @@ static void radar_timer_cb(lv_timer_t *timer)
     lv_label_set_text(lbl_radar_updated, buf);
 }
 
+static void astra_anim_timer_cb(lv_timer_t *timer)
+{
+    (void) timer;
+    if (!img_astra_anim || icon_astra_anim_count <= 0) return;
+    astra_anim_frame = (uint16_t)((astra_anim_frame + 1) % icon_astra_anim_count);
+    lv_image_set_src(img_astra_anim, icon_astra_anim[astra_anim_frame]);
+}
+
 static void sun_anim_timer_cb(lv_timer_t *timer)
 {
     (void) timer;
     if (!img_sun_anim || icon_sun_anim_count <= 0) return;
     sun_anim_frame = (uint16_t)((sun_anim_frame + 1) % icon_sun_anim_count);
     lv_image_set_src(img_sun_anim, icon_sun_anim[sun_anim_frame]);
-}
-
-static void moon_anim_timer_cb(lv_timer_t *timer)
-{
-    (void) timer;
-    if (!img_moon_anim || icon_moon_anim_count <= 0) return;
-    /* The animation stores 17 frames where frame[16] duplicates frame[0] to
-     * close the loop. Playing it would show frame 0 twice and cause a visible
-     * stall, so step through only the 16 unique frames. */
-    moon_anim_frame = (uint16_t)((moon_anim_frame + 1) % (icon_moon_anim_count - 1));
-    lv_image_set_src(img_moon_anim, icon_moon_anim[moon_anim_frame]);
 }
 
 static void earth_anim_timer_cb(lv_timer_t *timer)
@@ -664,6 +700,8 @@ static void whale_anim_timer_cb(lv_timer_t *timer)
     lv_image_set_src(img_whale_anim, icon_whale_anim[whale_anim_frame]);
 }
 
+
+
 void ui_app_init(void)
 {
     lv_obj_t *s = lv_screen_active();
@@ -671,8 +709,9 @@ void ui_app_init(void)
     lv_obj_set_style_bg_opa(s, LV_OPA_COVER, 0);
 
     claude_panel_count = 0;
-    deepseek_panel_count = 0;
+    dsh_panel_count = 0;
     codex_panel_count = 0;
+    zcode_panel_count = 0;
     carousel_page = 0;
     carousel_hold_ticks = 0;
     carousel_anim_tick = 0;
@@ -700,10 +739,11 @@ void ui_app_init(void)
     lv_obj_t *view = mkbare(s, 0, 66, VIEW_W, SLIDE_H);
     carousel_track = mkbare(view, 0, 0, PANEL_W * TRACK_PANELS, SLIDE_H);
     mk_track_panel(carousel_track, 0, AGENT_CLAUDE);
-    mk_track_panel(carousel_track, 1, AGENT_DEEPSEEK);
+    mk_track_panel(carousel_track, 1, AGENT_DSH);
     mk_track_panel(carousel_track, 2, AGENT_CODEX);
-    mk_track_panel(carousel_track, 3, AGENT_CLAUDE);
-    mk_track_panel(carousel_track, 4, AGENT_DEEPSEEK);
+    mk_track_panel(carousel_track, 3, AGENT_ZCODE);
+    mk_track_panel(carousel_track, 4, AGENT_CLAUDE);
+    mk_track_panel(carousel_track, 5, AGENT_DSH);
     carousel_split[0] = mkdiv_obj(carousel_track, PANEL_W - 2, 8, 2, 188);
     carousel_split[1] = mkdiv_obj(carousel_track, PANEL_W * 2 - 2, 8, 2, 188);
     set_carousel_splits(false);
@@ -726,17 +766,17 @@ void ui_app_init(void)
     pet_timer = lv_timer_create(pet_timer_cb, PET_TIMER_MS, NULL);
     if (radar_timer) lv_timer_del(radar_timer);
     radar_timer = lv_timer_create(radar_timer_cb, 1000, NULL);
+    if (astra_anim_timer) lv_timer_del(astra_anim_timer);
+    astra_anim_timer = lv_timer_create(astra_anim_timer_cb, 250, NULL);
     if (sun_anim_timer) lv_timer_del(sun_anim_timer);
     sun_anim_timer = lv_timer_create(sun_anim_timer_cb, 150, NULL);
-    if (moon_anim_timer) lv_timer_del(moon_anim_timer);
-    moon_anim_timer = lv_timer_create(moon_anim_timer_cb, 300, NULL);
     if (earth_anim_timer) lv_timer_del(earth_anim_timer);
     earth_anim_timer = lv_timer_create(earth_anim_timer_cb, 250, NULL);
     if (whale_anim_timer) lv_timer_del(whale_anim_timer);
     whale_anim_timer = lv_timer_create(whale_anim_timer_cb, 200, NULL);
     have_data = false;
     logged_first_report = false;
-    ESP_LOGI(TAG, "UI build marker UI v14, model_col=112, token_col=60, pet_eye_knockout=1, carousel=30fps-fast, pet_art=crab-focus, battery=1, pet_big_page=1, pet_big_size=184, radar_page=1, pages=3");
+    ESP_LOGI(TAG, "UI build marker UI v27 radar-price-corner, model_col=112, token_col=60, carousel=30fps-fast, panels=claude+deepseek+codex+zcode, dsh_zcode_cny=1, pet_art=crab-focus, battery=1, pet_big_page=1, pet_big_size=256, radar_page=1, radar_corner=gpt5.6-sol-max, pages=3");
 }
 
 static const char *weather_cn(const char *condition)
@@ -788,29 +828,9 @@ static void update_claude_panel(const claude_panel_t *p, const usage_report_t *r
     const usage_bucket_t *cb[3] = { &r->today, &r->month, &r->lifetime };
     for (int i = 0; i < 3; ++i) {
         fmt_tok(tk, sizeof(tk), cb[i]->tokens_used);
-        fmt_cost(ct, sizeof(ct), cb[i]->cost_usd);
+        fmt_cost(ct, sizeof(ct), cb[i]->cost, false);
         lv_label_set_text(p->tok[i], tk);
         lv_label_set_text(p->cost[i], ct);
-    }
-}
-
-static void update_deepseek_panel(const deepseek_panel_t *p, const usage_report_t *r)
-{
-    char b[24], tk[16];
-    if (r->deepseek.valid) {
-        snprintf(b, sizeof(b), "\xC2\xA5""%.2f", r->deepseek.balance);  // ¥
-        lv_label_set_text(p->lbl_balance, b);
-        snprintf(b, sizeof(b), "%.2f", r->deepseek.granted);
-        lv_label_set_text(p->val[0], b);
-        snprintf(b, sizeof(b), "%.2f", r->deepseek.topped);
-        lv_label_set_text(p->val[1], b);
-        fmt_tok(tk, sizeof(tk), r->deepseek.today_tokens);
-        lv_label_set_text(p->val[2], tk);
-    } else {
-        lv_label_set_text(p->lbl_balance, "--");
-        lv_label_set_text(p->val[0], "-");
-        lv_label_set_text(p->val[1], "-");
-        lv_label_set_text(p->val[2], "-");
     }
 }
 
@@ -822,6 +842,42 @@ static const usage_other_agent_t *find_other_agent(const usage_report_t *r, cons
         }
     }
     return NULL;
+}
+
+static void update_dsh_panel(const dsh_panel_t *p, const usage_report_t *r)
+{
+    char tk[16], ct[16];
+    const usage_other_agent_t *dsh = find_other_agent(r, "dsh");
+    if (!dsh) {
+        for (int i = 0; i < 3; ++i) {
+            lv_label_set_text(p->model[i], "-");
+            lv_label_set_text(p->model_tok[i], "-");
+            lv_label_set_text(p->tok[i], "-");
+            lv_label_set_text(p->cost[i], "-");
+        }
+        return;
+    }
+
+    for (int i = 0; i < 3; ++i) {
+        if (i < dsh->model_count) {
+            fmt_tok(tk, sizeof(tk), dsh->models[i].tokens);
+            char name[32]; short_model_name(dsh->models[i].model, name, sizeof(name));
+            lv_label_set_text(p->model[i], name);
+            lv_label_set_text(p->model_tok[i], tk);
+        } else {
+            lv_label_set_text(p->model[i], "-");
+            lv_label_set_text(p->model_tok[i], "-");
+        }
+    }
+
+    const usage_bucket_t *cb[3] = { &dsh->today, &dsh->month, &dsh->lifetime };
+    bool cny = strncmp(dsh->currency, "CNY", 3) == 0;
+    for (int i = 0; i < 3; ++i) {
+        fmt_tok(tk, sizeof(tk), cb[i]->tokens_used);
+        fmt_cost(ct, sizeof(ct), cb[i]->cost, cny);
+        lv_label_set_text(p->tok[i], tk);
+        lv_label_set_text(p->cost[i], ct);
+    }
 }
 
 static void update_codex_panel(const codex_panel_t *p, const usage_report_t *r)
@@ -851,9 +907,46 @@ static void update_codex_panel(const codex_panel_t *p, const usage_report_t *r)
     }
 
     const usage_bucket_t *cb[3] = { &codex->today, &codex->month, &codex->lifetime };
+    bool cny = strncmp(codex->currency, "CNY", 3) == 0;
     for (int i = 0; i < 3; ++i) {
         fmt_tok(tk, sizeof(tk), cb[i]->tokens_used);
-        fmt_cost(ct, sizeof(ct), cb[i]->cost_usd);
+        fmt_cost(ct, sizeof(ct), cb[i]->cost, cny);
+        lv_label_set_text(p->tok[i], tk);
+        lv_label_set_text(p->cost[i], ct);
+    }
+}
+
+static void update_zcode_panel(const zcode_panel_t *p, const usage_report_t *r)
+{
+    char tk[16], ct[16];
+    const usage_other_agent_t *zcode = find_other_agent(r, "zcode");
+    if (!zcode) {
+        for (int i = 0; i < 3; ++i) {
+            lv_label_set_text(p->model[i], "-");
+            lv_label_set_text(p->model_tok[i], "-");
+            lv_label_set_text(p->tok[i], "-");
+            lv_label_set_text(p->cost[i], "-");
+        }
+        return;
+    }
+
+    for (int i = 0; i < 3; ++i) {
+        if (i < zcode->model_count) {
+            fmt_tok(tk, sizeof(tk), zcode->models[i].tokens);
+            char name[32]; short_model_name(zcode->models[i].model, name, sizeof(name));
+            lv_label_set_text(p->model[i], name);
+            lv_label_set_text(p->model_tok[i], tk);
+        } else {
+            lv_label_set_text(p->model[i], "-");
+            lv_label_set_text(p->model_tok[i], "-");
+        }
+    }
+
+    const usage_bucket_t *cb[3] = { &zcode->today, &zcode->month, &zcode->lifetime };
+    bool cny = strncmp(zcode->currency, "CNY", 3) == 0;
+    for (int i = 0; i < 3; ++i) {
+        fmt_tok(tk, sizeof(tk), cb[i]->tokens_used);
+        fmt_cost(ct, sizeof(ct), cb[i]->cost, cny);
         lv_label_set_text(p->tok[i], tk);
         lv_label_set_text(p->cost[i], ct);
     }
@@ -870,45 +963,8 @@ static const usage_radar_point_t *find_radar_point(const usage_radar_t *r, const
     return NULL;
 }
 
-static const usage_radar_trend_t *find_radar_trend(const usage_radar_t *r, const char *model, const char *effort)
-{
-    for (int i = 0; i < r->trend_count; ++i) {
-        if (strcmp(r->trends[i].model, model) == 0 &&
-            strcmp(r->trends[i].effort, effort) == 0)
-            return &r->trends[i];
-    }
-    return NULL;
-}
-
-static void update_radar_sparkline(radar_cell_t *c, int pt_idx, const char *model,
-                                   const char *effort, const usage_radar_t *r, int sw)
-{
-    const usage_radar_trend_t *t = find_radar_trend(r, model, effort);
-    if (!t || t->iq_count < 2) {
-        if (c->sparkline) lv_obj_add_flag(c->sparkline, LV_OBJ_FLAG_HIDDEN);
-        return;
-    }
-    float min_iq = t->iqs[0], max_iq = t->iqs[0];
-    for (int i = 1; i < t->iq_count; ++i) {
-        if (t->iqs[i] < min_iq) min_iq = t->iqs[i];
-        if (t->iqs[i] > max_iq) max_iq = t->iqs[i];
-    }
-    float range = max_iq - min_iq;
-    if (range < 0.1f) range = 1.0f;
-
-    const int sh = 8;
-    lv_point_precise_t *pts = radar_spark_pts[pt_idx / 3][pt_idx % 3];
-    for (int i = 0; i < t->iq_count; ++i) {
-        pts[i].x = (t->iq_count > 1) ? (i * sw / (t->iq_count - 1)) : 0;
-        pts[i].y = (int32_t)(sh - (t->iqs[i] - min_iq) / range * sh);
-    }
-    if (c->sparkline) {
-        lv_line_set_points(c->sparkline, pts, t->iq_count);
-        lv_obj_clear_flag(c->sparkline, LV_OBJ_FLAG_HIDDEN);
-    }
-}
-
-static void update_radar_cell(radar_cell_t *c, const char *model, const usage_radar_point_t *pt)
+static void update_radar_cell(radar_cell_t *c, const char *model,
+                              const usage_radar_point_t *pt)
 {
     if (c->model) lv_label_set_text(c->model, model ? model : "");
     if (!pt || !pt->valid) {
@@ -917,7 +973,6 @@ static void update_radar_cell(radar_cell_t *c, const char *model, const usage_ra
         lv_label_set_text(c->iq, "0");
         lv_label_set_text(c->price, "");
         lv_label_set_text(c->time, "");
-        lv_label_set_text(c->pass, "N/A");
         return;
     }
 
@@ -931,28 +986,28 @@ static void update_radar_cell(radar_cell_t *c, const char *model, const usage_ra
     snprintf(b, sizeof(b), "%dmin", (int)pt->minutes);
     lv_label_set_text(c->time, b);
 
-    snprintf(b, sizeof(b), "%d/%d", (int)pt->passed, (int)pt->tasks);
-    lv_label_set_text(c->pass, b);
-
     lv_obj_set_style_bg_color(c->cell, WHITE, 0);
     lv_obj_set_style_border_width(c->cell, 1, 0);
 }
 
 static void update_radar_page(const usage_radar_t *r)
 {
-    static const char *models[3]  = {"sol", "terra", "luna"};
-    static const char *efforts[3] = {"ultra", "max", "xhigh"};
+    static const char *models[3]  = {"astra", "sol", "terra"};
+    static const char *efforts[6] = {"ultra", "max", "xhigh", "high", "medium", "low"};
     for (int m = 0; m < 3; ++m)
-        for (int e = 0; e < 3; ++e) {
+        for (int e = 0; e < 6; ++e) {
+            /* terra medium+low are merged into the pet cell - skip them */
+            if (m == 2 && (e == 4 || e == 5)) continue;
             update_radar_cell(&radar_cells[m][e], NULL,
                               find_radar_point(r, models[m], efforts[e]));
-            update_radar_sparkline(&radar_cells[m][e], m * 3 + e,
-                                   models[m], efforts[e], r, 50);
         }
-    /* Row 4: DeepSeek (left) + GPT-5.5 (right) */
-    update_radar_cell(&radar_cells[3][0], "DeepSeek-V4-Flash MAX", find_radar_point(r, "deepseek", "max"));
-    update_radar_sparkline(&radar_cells[3][0], 9, "deepseek", "max", r, 96);
-    update_radar_cell(&radar_cells[3][1], "GPT-5.5 XHIGH", find_radar_point(r, "gpt-5.5", "xhigh"));
+    /* Row 4: DeepSeek + Luna max + GPT-5.6-sol max (legacy flagship) */
+    update_radar_cell(&radar_cells[3][0], "DS-V4-F MAX",
+                      find_radar_point(r, "deepseek", "max"));
+    update_radar_cell(&radar_cells[3][1], "Luna MAX",
+                      find_radar_point(r, "luna", "max"));
+    update_radar_cell(&radar_cells[3][2], "5.6-SOL MAX",
+                      find_radar_point(r, "sol5.6", "max"));
 }
 
 void ui_app_update(const usage_report_t *r)
@@ -964,19 +1019,23 @@ void ui_app_update(const usage_report_t *r)
         const char *raw_name = (r->model_count > 0) ? r->models[0].model : "-";
         short_model_name(raw_name, short_name, sizeof(short_name));
         long long top_tokens = (r->model_count > 0) ? (long long) r->models[0].tokens : 0;
-        ESP_LOGI(TAG, "UI v10 first report: deepseek_valid=%d balance=%.2f top_model=%s short=%s top_tokens=%lld",
-                 r->deepseek.valid ? 1 : 0, r->deepseek.balance, raw_name, short_name, top_tokens);
+        const usage_other_agent_t *dsh = find_other_agent(r, "dsh");
+        ESP_LOGI(TAG, "UI v10 first report: dsh_valid=%d top_model=%s short=%s top_tokens=%lld",
+                 dsh ? 1 : 0, raw_name, short_name, top_tokens);
         logged_first_report = true;
     }
 
     for (int i = 0; i < claude_panel_count; ++i) {
         update_claude_panel(&claude_panels[i], r);
     }
-    for (int i = 0; i < deepseek_panel_count; ++i) {
-        update_deepseek_panel(&deepseek_panels[i], r);
+    for (int i = 0; i < dsh_panel_count; ++i) {
+        update_dsh_panel(&dsh_panels[i], r);
     }
     for (int i = 0; i < codex_panel_count; ++i) {
         update_codex_panel(&codex_panels[i], r);
+    }
+    for (int i = 0; i < zcode_panel_count; ++i) {
+        update_zcode_panel(&zcode_panels[i], r);
     }
     if (r->pet.valid) {
         const pet_anim_sequence_t *seq = r->pet.asset[0]

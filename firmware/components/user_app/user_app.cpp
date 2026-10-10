@@ -158,7 +158,9 @@ void UserApp_TaskInit(const char *bridge_url, const char *token, int poll_sec)
     if (api) snprintf(api, sizeof(cfg->pet_url) - (api - cfg->pet_url), "/api/pet/state");
     if (token) strncpy(cfg->token, token, sizeof(cfg->token) - 1);
     cfg->poll_sec = poll_sec > 0 ? poll_sec : 60;
-    BaseType_t poll_ok = xTaskCreatePinnedToCore(usage_poll_task, "usage_poll", 6 * 1024, cfg, 4, NULL, 1);
+    /* 10KB: usage_report_t lives on this stack and grew to 18 radar points +
+     * trends (~2.3KB) plus the deep cJSON/http call trees; 6KB overflowed. */
+    BaseType_t poll_ok = xTaskCreatePinnedToCore(usage_poll_task, "usage_poll", 10 * 1024, cfg, 4, NULL, 1);
     if (poll_ok != pdPASS) {
         ESP_LOGE(TAG, "failed to create usage_poll task");
         free(cfg);

@@ -54,10 +54,11 @@ static void parse_bucket(const cJSON *o, usage_bucket_t *out)
         return;
     }
     const cJSON *tok = cJSON_GetObjectItemCaseSensitive(o, "tokens_used");
-    const cJSON *cst = cJSON_GetObjectItemCaseSensitive(o, "cost_usd");
+    const cJSON *cst = cJSON_GetObjectItemCaseSensitive(o, "cost");
+    if (!cJSON_IsNumber(cst)) cst = cJSON_GetObjectItemCaseSensitive(o, "cost_usd");
     const cJSON *pct = cJSON_GetObjectItemCaseSensitive(o, "percent_used");
     out->tokens_used       = cJSON_IsNumber(tok) ? (int64_t) tok->valuedouble : 0;
-    out->cost_usd          = cJSON_IsNumber(cst) ? cst->valuedouble : 0.0;
+    out->cost              = cJSON_IsNumber(cst) ? cst->valuedouble : 0.0;
     out->percent_used_x100 = pct_x100(pct);
 }
 
@@ -89,12 +90,13 @@ static void parse_models(const cJSON *bm, usage_model_t *models, int *model_coun
         const cJSON *m    = cJSON_GetArrayItem(bm, i);
         const cJSON *name = cJSON_GetObjectItemCaseSensitive(m, "model");
         const cJSON *tok  = cJSON_GetObjectItemCaseSensitive(m, "tokens");
-        const cJSON *cst  = cJSON_GetObjectItemCaseSensitive(m, "cost_usd");
+        const cJSON *cst  = cJSON_GetObjectItemCaseSensitive(m, "cost");
+        if (!cJSON_IsNumber(cst)) cst = cJSON_GetObjectItemCaseSensitive(m, "cost_usd");
         if (cJSON_IsString(name)) {
             strncpy(models[i].model, name->valuestring, sizeof(models[i].model) - 1);
         }
-        models[i].tokens   = cJSON_IsNumber(tok) ? (int64_t) tok->valuedouble : 0;
-        models[i].cost_usd = cJSON_IsNumber(cst) ? cst->valuedouble : 0.0;
+        models[i].tokens = cJSON_IsNumber(tok) ? (int64_t) tok->valuedouble : 0;
+        models[i].cost   = cJSON_IsNumber(cst) ? cst->valuedouble : 0.0;
     }
     *model_count = n;
 }
@@ -212,8 +214,14 @@ esp_err_t usage_client_fetch(const char *url, const char *token, usage_report_t 
             const cJSON *o = cJSON_GetArrayItem(other, i);
             if (!cJSON_IsObject(o)) continue;
             const cJSON *ag = cJSON_GetObjectItemCaseSensitive(o, "agent");
+            const cJSON *cur = cJSON_GetObjectItemCaseSensitive(o, "currency");
             if (cJSON_IsString(ag)) {
                 strncpy(out->other[i].agent, ag->valuestring, sizeof(out->other[i].agent) - 1);
+            }
+            if (cJSON_IsString(cur)) {
+                strncpy(out->other[i].currency, cur->valuestring, sizeof(out->other[i].currency) - 1);
+            } else {
+                strncpy(out->other[i].currency, "USD", sizeof(out->other[i].currency) - 1);
             }
             parse_bucket(cJSON_GetObjectItemCaseSensitive(o, "today"), &out->other[i].today);
             parse_bucket(cJSON_GetObjectItemCaseSensitive(o, "month"), &out->other[i].month);

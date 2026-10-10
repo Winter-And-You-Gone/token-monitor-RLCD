@@ -4,6 +4,7 @@
 extern const lv_image_dsc_t icon_claudecode;
 extern const lv_image_dsc_t icon_deepseek;
 extern const lv_image_dsc_t icon_codex;
+extern const lv_image_dsc_t icon_zcode;
 extern const lv_image_dsc_t icon_wx_clear;
 extern const lv_image_dsc_t icon_wx_partly;
 extern const lv_image_dsc_t icon_wx_cloud;
@@ -26,3 +27,6 @@ extern const int icon_earth_anim_count;
 /* whale (deepseek) animation frames (generated) */
 extern const lv_image_dsc_t *icon_whale_anim[];
 extern const int icon_whale_anim_count;
+/* astra (galaxy) animation frames (generated) */
+extern const lv_image_dsc_t *icon_astra_anim[];
+extern const int icon_astra_anim_count;
