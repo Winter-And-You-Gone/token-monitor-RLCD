@@ -317,7 +317,7 @@ def _bucket(tokens: int, cost: float, limit_usd: float | None = None,
         pct = cost / limit_usd
     return Bucket(
         tokens_used=int(tokens),
-        cost_usd=round(float(cost), 4),
+        cost=round(float(cost), 4),
         tokens_limit=limit_tokens,
         percent_used=round(pct, 4) if pct is not None else None,
     )
@@ -380,7 +380,7 @@ def _aggregate_model_breakdown(daily_entries: list[dict[str, Any]], top_n: int =
             d["tokens"] += _model_token_total(mb)
             d["cost"] += _cost_of(mb)
     rows = [
-        ModelBreakdown(model=k, tokens=int(v["tokens"]), cost_usd=round(v["cost"], 4))
+        ModelBreakdown(model=k, tokens=int(v["tokens"]), cost=round(v["cost"], 4))
         for k, v in agg.items()
     ]
     rows.sort(key=lambda r: r.tokens, reverse=True)

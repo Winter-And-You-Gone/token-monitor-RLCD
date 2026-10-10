@@ -16,7 +16,6 @@ zcode 触发的 hook 事件经 `run-hook.cmd` 转发到 `pet_hook.js --agent zco
 | `UserPromptSubmit` | `thinking` | 用户提交 prompt,摆件思考 |
 | `PreToolUse` | `working` | 工具调用前,摆件工作 |
 | `PostToolUse` | `working` | 工具调用后,保持工作 |
-| `PostToolUseFailure` | `error` | 工具调用失败,摆件报错 |
 | `Stop` | `attention` | 回合结束,摆件提示 |
 | `PermissionRequest` | `notification` | 权限请求,摆件通知 |
 
@@ -34,7 +33,7 @@ zcode 通过 `~/.zcode/cli/config.json` 的 `plugins.dirs` 发现本地插件
   "mcp": { /* ... */ },
   "plugins": {
     "dirs": [
-      "<repo>\\rlcd-pet-zcode"
+      "X:\\ESP32-S3 RLCD\\token-monitor-RLCD\\rlcd-pet-zcode"
     ],
     "enabledPlugins": {
       "superpowers@zcode-plugins-official": true,
@@ -74,8 +73,8 @@ zcode 生命周期事件
 uv run python bridge.py
 
 :: 2. 模拟 zcode 注入 PLUGIN_ROOT,直接调 run-hook.cmd
-set CLAUDE_PLUGIN_ROOT=<repo>\rlcd-pet-zcode
-"<repo>\rlcd-pet-zcode\hooks\run-hook.cmd" PreToolUse
+set CLAUDE_PLUGIN_ROOT=X:\ESP32-S3 RLCD\token-monitor-RLCD\rlcd-pet-zcode
+"X:\ESP32-S3 RLCD\token-monitor-RLCD\rlcd-pet-zcode\hooks\run-hook.cmd" PreToolUse
 
 :: 3. 查摆件状态,应看到 agent=zcode, state=working
 curl http://127.0.0.1:7777/api/pet/state

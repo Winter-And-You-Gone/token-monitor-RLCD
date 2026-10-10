@@ -150,15 +150,19 @@ class BridgeConfigTests(unittest.TestCase):
     def test_other_agent_fallback_preserves_codex_usage(self) -> None:
         codex = bridge.OtherAgentUsage(
             agent="codex",
-            today=bridge.Bucket(tokens_used=42, cost_usd=0.1),
-            month=bridge.Bucket(tokens_used=420, cost_usd=1.0),
-            lifetime=bridge.Bucket(tokens_used=4200, cost_usd=10.0),
+            today=bridge.Bucket(tokens_used=42, cost=0.1),
+            month=bridge.Bucket(tokens_used=420, cost=1.0),
+            lifetime=bridge.Bucket(tokens_used=4200, cost=10.0),
         )
         old_cache = bridge._cache.copy()
         old_include = bridge.INCLUDE_OTHERS
         old_fetch = bridge.fetch_other_agents
+        old_dsh = bridge.fetch_dsh_usage
+        old_zcode = bridge.fetch_zcode_usage
         bridge.INCLUDE_OTHERS = True
         bridge.fetch_other_agents = lambda: []
+        bridge.fetch_dsh_usage = lambda: None
+        bridge.fetch_zcode_usage = lambda: None
         try:
             bridge._cache["other"] = [codex]
 
@@ -172,22 +176,28 @@ class BridgeConfigTests(unittest.TestCase):
             bridge._cache.update(old_cache)
             bridge.INCLUDE_OTHERS = old_include
             bridge.fetch_other_agents = old_fetch
+            bridge.fetch_dsh_usage = old_dsh
+            bridge.fetch_zcode_usage = old_zcode
 
     def test_refresh_error_backfills_other_agents_into_cached_report(self) -> None:
         codex = bridge.OtherAgentUsage(
             agent="codex",
-            today=bridge.Bucket(tokens_used=99, cost_usd=0.2),
-            month=bridge.Bucket(tokens_used=990, cost_usd=2.0),
-            lifetime=bridge.Bucket(tokens_used=9900, cost_usd=20.0),
+            today=bridge.Bucket(tokens_used=99, cost=0.2),
+            month=bridge.Bucket(tokens_used=990, cost=2.0),
+            lifetime=bridge.Bucket(tokens_used=9900, cost=20.0),
         )
         old_cache = bridge._cache.copy()
         old_include = bridge.INCLUDE_OTHERS
         old_fetch_claude = bridge.fetch_claude
         old_fetch_other = bridge.fetch_other_agents
+        old_dsh = bridge.fetch_dsh_usage
+        old_zcode = bridge.fetch_zcode_usage
         report = bridge._mock_report().model_copy(update={"other": []})
         bridge.INCLUDE_OTHERS = True
         bridge.fetch_claude = lambda: (_ for _ in ()).throw(TimeoutError("slow ccusage"))
         bridge.fetch_other_agents = lambda: [codex]
+        bridge.fetch_dsh_usage = lambda: None
+        bridge.fetch_zcode_usage = lambda: None
         try:
             bridge._cache["report"] = report
             bridge._cache["other"] = []
@@ -206,6 +216,8 @@ class BridgeConfigTests(unittest.TestCase):
             bridge.INCLUDE_OTHERS = old_include
             bridge.fetch_claude = old_fetch_claude
             bridge.fetch_other_agents = old_fetch_other
+            bridge.fetch_dsh_usage = old_dsh
+            bridge.fetch_zcode_usage = old_zcode
 
     def test_mock_usage_payload_includes_current_pet_state(self) -> None:
         old_auth = bridge.AUTH_TOKEN

@@ -213,6 +213,7 @@ function dshSessionIdFromTranscript(transcript) {
   return match ? match[1] : "";
 }
 
+
 function looksLikeCodexPayload(payload) {
   if (!payload || typeof payload !== "object") return false;
   if (typeof payload.codexOriginator === "string" || typeof payload.codexSource === "string") return true;

@@ -10,6 +10,8 @@ only together with RLCD_AUTH_TOKEN when exposing it to the LAN.
 from __future__ import annotations
 
 import os
+import sys
+import subprocess
 import ipaddress
 import json
 import re
@@ -66,6 +68,8 @@ from schema import (
 from sources.claude_local import fetch_claude, fetch_other_agents
 from sources.weather import fetch_weather
 from sources.deepseek import fetch_deepseek
+from sources.dsh_usage import fetch_dsh_usage
+from sources.zcode_usage import fetch_zcode_usage
 from sources.codexradar import fetch_codexradar
 
 
@@ -365,7 +369,7 @@ _weather_override_inflight: set[tuple[object, ...]] = set()
 _weather_override_failures: dict[tuple[object, ...], float] = {}
 WEATHER_OVERRIDE_TTL = int(os.environ.get("RLCD_WEATHER_OVERRIDE_TTL", "600"))
 WEATHER_OVERRIDE_RETRY_SEC = int(os.environ.get("RLCD_WEATHER_OVERRIDE_RETRY_SEC", "30"))
-OTHER_AGENT_ORDER = ("codex", "gemini", "copilot")
+OTHER_AGENT_ORDER = ("codex", "dsh", "zcode", "gemini", "copilot")
 
 
 
@@ -1066,24 +1070,18 @@ def _dsh_session_files(root: Path = DSH_SESSION_DIR) -> list[Path]:
 
 def _dsh_decode(file_path: Path) -> bytes | None:
     try:
-        data = file_path.read_bytes()
-    except OSError:
-        return None
-    if not file_path.name.endswith(".zstd"):
-        return data
-    if _zstandard is None:
-        return None
-    try:
+        if not file_path.name.endswith(".zstd"):
+            return file_path.read_bytes()
+        if _zstandard is None:
+            return None
         # Real dsh session files are several concatenated zstd frames (one per
         # durable publish) whose frame headers omit the content size, so
         # neither single-shot decompress() nor a single decompressobj() works.
-        chunks: list[bytes] = []
-        rest = data
-        while rest:
-            dec = _zstandard.ZstdDecompressor().decompressobj()
-            chunks.append(dec.decompress(rest))
-            rest = dec.unused_data
-        return b"".join(chunks)
+        # The decompressobj() loop is also pathologically slow on those frames
+        # (python-zstandard's grow-the-output path), so stream across frames
+        # with the C-backed reader instead — identical output, ~1000x faster.
+        with file_path.open("rb") as fh:
+            return _zstandard.ZstdDecompressor().stream_reader(fh, read_across_frames=True).read()
     except Exception:
         return None
 
@@ -1208,6 +1206,10 @@ def _start_dsh_log_monitor() -> None:
     threading.Thread(target=_loop, name="dsh-jsonl-monitor", daemon=True).start()
 
 
+try:
+    import zstandard as _zstandard
+except Exception:  # pragma: no cover - env without the extra
+    _zstandard = None
 def _looks_like_codex_payload(data: dict[str, object]) -> bool:
     if (
         isinstance(data.get("codexOriginator"), str)
@@ -1289,6 +1291,12 @@ def _pet_state_for_event(data: dict[str, object], raw_state: str, event: str, ag
         if event == "Stop" and _pet_has_stop_error(data):
             return "error"
         return CODEX_EVENT_STATES.get(event, PET_EVENT_STATES.get(event, "idle"))
+    if _is_dsh_agent(agent):
+        if event == "PostToolUse" and _pet_has_payload_error(data):
+            return "error"
+        if event == "Stop" and _pet_has_stop_error(data):
+            return "error"
+        return DSH_EVENT_STATES.get(event, PET_EVENT_STATES.get(event, "idle"))
     if _is_dsh_agent(agent):
         if event == "PostToolUse" and _pet_has_payload_error(data):
             return "error"
@@ -1518,7 +1526,18 @@ def _fetch_other_agents_with_fallback() -> list[OtherAgentUsage]:
     try:
         fresh = fetch_other_agents()
     except Exception:
-        return fallback
+        fresh = []
+    # dsh (DeepSeek Harness) has no ccusage parser; its usage comes from the
+    # session-log aggregator and only shows up once there is real data.
+    dsh = fetch_dsh_usage()
+    if dsh is not None and dsh.lifetime.tokens_used > 0:
+        fresh = [row for row in fresh if (row.agent or "").lower() != "dsh"]
+        fresh.append(dsh)
+    # zcode usage comes from its local SQLite database (model_usage table).
+    zcode = fetch_zcode_usage()
+    if zcode is not None and zcode.lifetime.tokens_used > 0:
+        fresh = [row for row in fresh if (row.agent or "").lower() != "zcode"]
+        fresh.append(zcode)
     if not fresh:
         return fallback
     return _merge_other_agents(fresh, fallback)
@@ -1650,21 +1669,43 @@ def _mock_report() -> UsageReport:
         updated_at=now,
         source="mock",
         claude=ClaudeUsage(
-            today=Bucket(tokens_used=382_000, cost_usd=9.14),
-            month=Bucket(tokens_used=8_400_000, cost_usd=187.22),
-            lifetime=Bucket(tokens_used=18_200_000, cost_usd=214.07),
+            today=Bucket(tokens_used=382_000, cost=9.14),
+            month=Bucket(tokens_used=8_400_000, cost=187.22),
+            lifetime=Bucket(tokens_used=18_200_000, cost=214.07),
             by_model=[
-                ModelBreakdown(model="claude-opus-4-7", tokens=12_900_000, cost_usd=180.00),
-                ModelBreakdown(model="claude-sonnet-4-6", tokens=4_400_000, cost_usd=28.00),
-                ModelBreakdown(model="claude-haiku-4-5", tokens=900_000, cost_usd=6.07),
+                ModelBreakdown(model="claude-opus-4-7", tokens=12_900_000, cost=180.00),
+                ModelBreakdown(model="claude-sonnet-4-6", tokens=4_400_000, cost=28.00),
+                ModelBreakdown(model="claude-haiku-4-5", tokens=900_000, cost=6.07),
             ],
         ),
         other=[
             OtherAgentUsage(
                 agent="codex",
-                today=Bucket(tokens_used=124_000, cost_usd=0.31),
-                month=Bucket(tokens_used=1_800_000, cost_usd=4.40),
-                lifetime=Bucket(tokens_used=5_200_000, cost_usd=11.90),
+                today=Bucket(tokens_used=124_000, cost=0.31),
+                month=Bucket(tokens_used=1_800_000, cost=4.40),
+                lifetime=Bucket(tokens_used=5_200_000, cost=11.90),
+            ),
+            OtherAgentUsage(
+                agent="dsh",
+                today=Bucket(tokens_used=610_000, cost=0.18),
+                month=Bucket(tokens_used=9_400_000, cost=2.60),
+                lifetime=Bucket(tokens_used=31_700_000, cost=8.75),
+                by_model=[
+                    ModelBreakdown(model="deepseek-v4-flash", tokens=21_500_000, cost=5.80),
+                    ModelBreakdown(model="deepseek-v4", tokens=8_600_000, cost=2.40),
+                    ModelBreakdown(model="deepseek-v3.2", tokens=1_600_000, cost=0.55),
+                ],
+            ),
+            OtherAgentUsage(
+                agent="zcode",
+                today=Bucket(tokens_used=48_200_000, cost=6.10),
+                month=Bucket(tokens_used=410_000_000, cost=52.30),
+                lifetime=Bucket(tokens_used=1_200_000_000, cost=151.90),
+                by_model=[
+                    ModelBreakdown(model="GLM-5.3-Flash", tokens=620_000_000, cost=78.40),
+                    ModelBreakdown(model="deepseek-v4-flash", tokens=410_000_000, cost=61.20),
+                    ModelBreakdown(model="GLM-5.3", tokens=120_000_000, cost=9.80),
+                ],
             ),
         ],
         weather=Weather(temp_c=24.3, code=2, condition="Partly", icon="partly", city="SHENZHEN"),
@@ -1712,7 +1753,7 @@ def simulator():
 
 @app.get("/sim/assets/{asset_name}", include_in_schema=False)
 def simulator_asset(asset_name: str):
-    allowed = {"claudecode.svg", "deepseek.svg", "codex.svg"}
+    allowed = {"claudecode.svg", "deepseek.svg", "codex.svg", "zcode.svg"}
     if asset_name not in allowed:
         raise HTTPException(status_code=404, detail="asset not found")
     return FileResponse(ASSET_DIR / asset_name, media_type="image/svg+xml")
@@ -1831,6 +1872,61 @@ def get_usage(
     return payload
 
 
+def _watch_source_and_exit(interval_s: float = 2.0) -> None:
+    """Reload the daemon when a .py file under the bridge dir changes.
+
+    On change, a detached helper re-arms the RLCD-Bridge scheduled task after
+    a short delay, then this process exits. The delay matters: the task's
+    MultipleInstancesPolicy=IgnoreNew drops a /run that arrives while the old
+    instance is still registered, so the helper must fire only after exit.
+    Re-arming from inside the process is required because RestartOnFailure
+    does not fire for this task's interactive-token principal. Polling mtimes
+    keeps this dependency-free (no watchdog package) and cheap.
+    """
+    root = Path(__file__).resolve().parent
+    task_name = os.environ.get("RLCD_TASK_NAME", "RLCD-Bridge")
+
+    def snapshot():
+        out = {}
+        for p in root.rglob("*.py"):
+            try:
+                out[str(p)] = p.stat().st_mtime_ns
+            except OSError:
+                pass
+        return out
+
+    def watch():
+        last = snapshot()
+        while True:
+            time.sleep(interval_s)
+            try:
+                current = snapshot()
+                if current != last:
+                    changed = sum(1 for k in current if current.get(k) != last.get(k))
+                    added = sum(1 for k in current if k not in last)
+                    removed = sum(1 for k in last if k not in current)
+                    sys.stderr.write(
+                        f"[reload] source change detected, restarting task "
+                        f"({changed} changed, {added} added, {removed} removed)\n")
+                    sys.stderr.flush()
+                    # Detached, delayed re-arm: outlives this process, fires
+                    # after the task instance slot frees up.
+                    subprocess.Popen(
+                        ["cmd", "/c", "timeout", "/t", "5", "/nobreak",
+                         ">", "NUL", "&", "schtasks", "/run", "/tn", task_name],
+                        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
+                        | subprocess.DETACHED_PROCESS,
+                        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL)
+                    os._exit(1)
+            except Exception as e:
+                sys.stderr.write(f"[reload] watcher error (ignored): {e}\n")
+                sys.stderr.flush()
+
+    t = threading.Thread(target=watch, name="source-reload-watcher", daemon=True)
+    t.start()
+
+
 def main():
     import sys
     import uvicorn
@@ -1844,6 +1940,8 @@ def main():
             sys.stdout = open(_log_dir / "bridge-server.out.log", "a", encoding="utf-8")
         if sys.stderr is None:
             sys.stderr = open(_log_dir / "bridge-server.err.log", "a", encoding="utf-8")
+
+    _watch_source_and_exit()
 
     host = _validated_bind_host()
     port = int(os.environ.get("RLCD_PORT", "7777"))

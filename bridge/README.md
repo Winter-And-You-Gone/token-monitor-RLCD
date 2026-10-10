@@ -24,6 +24,15 @@ Open `http://localhost:7777/sim` for a browser-based RLCD simulator. It uses
 the same `/api/usage` endpoint, supports mock/live mode, token auth, weather
 location override, auto refresh, and stale/offline states.
 
+## Auto reload (daemon under Task Scheduler)
+
+The daemon watches every `.py` under `bridge/` (mtime polling every 2s,
+`_watch_source_and_exit`). On change it spawns a detached helper that waits 5s
+then runs `schtasks /run /tn RLCD-Bridge`, and exits. The 5s delay matters:
+the task's `MultipleInstancesPolicy=IgnoreNew` silently drops a `/run` while
+the old instance is still registered. New code is live ~20s after the edit;
+no manual restart needed. Override the task name with `RLCD_TASK_NAME`.
+
 
 ## RLCD pet state hook
 
@@ -330,6 +339,10 @@ the two maps must be kept in sync: `DSH_JSONL_EVENT_STATES` / `DSH_EVENT_STATES`
 | `RLCD_PET_MOUSE_SLEEP_SEC` | `300` | seconds of no pet events before yawning/dozing/sleeping. Original Clawd's `mouseSleepTimeout` is 60s, but RLCD defaults longer because there is no mouse movement to reset the timer. |
 | `RLCD_PET_IDLE_LOOK_ASSET` | `clawd-idle-reading.svg` | idle animation asset used by the bridge. |
 | `RLCD_PET_SLEEP_SEQUENCE` | `1` | set `0` to disable the automatic idle-to-sleep sequence. |
+| `RLCD_DSH_JSONL_MONITOR` | `1` | set `0` to disable the dsh session-log poller (`~/.dsh/sessions/**/session.jsonl.zstd`). Requires the `zstandard` package. |
+| `RLCD_DSH_JSONL_POLL_SEC` | `1.5` | dsh poll interval in seconds. |
+| `RLCD_DSH_JSONL_RECENT_SEC` | `120` | first-seen dsh session files older than this are skipped (no history replay). |
+| `RLCD_DSH_SESSION_DIR` | `~/.dsh/sessions` | dsh session-log root override. |
 | `RLCD_DSH_JSONL_MONITOR` | `1` | set `0` to disable the dsh session-log poller (`~/.dsh/sessions/**/session.jsonl.zstd`). Requires the `zstandard` package. |
 | `RLCD_DSH_JSONL_POLL_SEC` | `1.5` | dsh poll interval in seconds. |
 | `RLCD_DSH_JSONL_RECENT_SEC` | `120` | first-seen dsh session files older than this are skipped (no history replay). |

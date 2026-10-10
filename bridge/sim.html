@@ -167,6 +167,10 @@
       -webkit-mask: url("/sim/assets/codex.svg") center / contain no-repeat;
       mask: url("/sim/assets/codex.svg") center / contain no-repeat;
     }
+    .zcode-logo {
+      -webkit-mask: url("/sim/assets/zcode.svg") center / contain no-repeat;
+      mask: url("/sim/assets/zcode.svg") center / contain no-repeat;
+    }
     .title {
       left: 50px;
       top: 10px;
@@ -229,34 +233,18 @@
       height: 1px;
       background: var(--ink);
     }
-    .row-label, .money-row-label {
+    .row-label {
       font: 700 14px/1.1 system-ui, sans-serif;
     }
-    .row-token, .row-cost, .money-row-val {
+    .row-token, .row-cost {
       font: 800 14px/1.1 ui-monospace, Consolas, monospace;
     }
     .row-label { left: 12px; width: 52px; overflow: hidden; }
     .row-token { left: 64px; width: 62px; text-align: right; }
     .row-cost { left: 128px; width: 64px; text-align: right; }
-    .money-row-label { left: 12px; width: 82px; overflow: hidden; }
-    .money-row-val { left: 94px; width: 94px; text-align: right; }
     .r0 { top: 126px; }
     .r1 { top: 154px; }
     .r2 { top: 182px; }
-    .balance-label {
-      left: 12px;
-      top: 38px;
-      width: 176px;
-      text-align: center;
-      font: 700 14px/1.1 system-ui, sans-serif;
-    }
-    .balance {
-      left: 12px;
-      top: 62px;
-      width: 176px;
-      text-align: center;
-      font: 900 28px/1.1 system-ui, sans-serif;
-    }
     .hero-label {
       left: 12px;
       top: 38px;
@@ -498,9 +486,6 @@
         today: "今日",
         month: "本月",
         total: "合计",
-        balance: "可用",
-        granted: "送值",
-        topped: "充值",
         idle: "空闲",
         state: "状态",
         updated: "更新",
@@ -518,7 +503,6 @@
         currentLocation: "当前位置",
         waiting: "等待桥接服务",
         indoorUnknown: "温度 --.-℃  湿度 --%",
-        tokenSuffix: "token",
         cityFallback: "SHENZHEN",
         conditions: {
           Clear: "晴", Sunny: "晴", Partly: "多云", Cloudy: "多云", Overcast: "多云",
@@ -554,9 +538,6 @@
         today: "today",
         month: "month",
         total: "total",
-        balance: "balance",
-        granted: "granted",
-        topped: "topped",
         idle: "idle",
         state: "state",
         updated: "updated",
@@ -574,7 +555,6 @@
         currentLocation: "current location",
         waiting: "waiting for bridge",
         indoorUnknown: "IN --.-°C  --%RH",
-        tokenSuffix: "tok",
         cityFallback: "SHENZHEN",
         conditions: {},
         cities: {}
@@ -601,7 +581,7 @@
     const screenInner = document.querySelector(".screen-inner");
     const CAROUSEL_HOLD_MS = 33 * 115;
     const CAROUSEL_ANIM_MS = 33 * 15;
-    const CAROUSEL_PANELS = ["claude", "deepseek", "codex", "claude", "deepseek"];
+    const CAROUSEL_PANELS = ["claude", "dsh", "codex", "zcode", "claude", "dsh"];
     const PET_ASSETS = new Set([
       "clawd-idle-follow.svg",
       "clawd-idle-reading.svg",
@@ -701,12 +681,6 @@
         <div class="row-cost r${rowIndex}${klass}">${esc(cost)}</div>
       `;
     }
-    function moneyRowHtml(label, value, rowIndex) {
-      return `
-        <div class="money-row-label r${rowIndex}">${esc(label)}</div>
-        <div class="money-row-val r${rowIndex}">${esc(value)}</div>
-      `;
-    }
     function shortModelName(name) {
       let text = String(name || "-");
       text = text.replace(/^deepseek-/, "ds-").replace(/^claude-/, "");
@@ -729,11 +703,11 @@
       const buckets = [c.today, c.month, c.lifetime];
       const rows = buckets.map((bucket, idx) => {
         const token = bucketValue(bucket, "tokens_used");
-        const cost = bucketValue(bucket, "cost_usd");
+        const cost = bucketValue(bucket, "cost");
         return rowHtml(
           [tr("today"), tr("month"), tr("total")][idx],
           token === null ? "-" : fmtTok(token),
-          cost === null ? "-" : fmtCost(cost),
+          cost === null ? "-" : fmtCost(cost, false),
           idx,
         );
       }).join("");
@@ -745,37 +719,21 @@
         ${rows}
       `;
     }
-    function renderDeepseekPanel(report) {
-      const ds = report && report.deepseek ? report.deepseek : null;
-      const valid = ds && Number.isFinite(ds.balance);
-      const granted = valid ? Number(ds.granted || 0).toFixed(2) : "-";
-      const topped = valid ? Number(ds.topped || 0).toFixed(2) : "-";
-      const today = valid ? fmtTok(ds.today_tokens) : "-";
-      return `
-        <div class="logo deepseek-logo"></div>
-        <div class="title">DEEPSEEK</div>
-        <div class="balance-label">${esc(tr("balance"))}</div>
-        <div class="balance">${esc(valid ? fmtMoney(ds.balance, ds.currency || "CNY") : "--")}</div>
-        <div class="subrule"></div>
-        ${moneyRowHtml(tr("granted"), granted, 0)}
-        ${moneyRowHtml(tr("topped"), topped, 1)}
-        ${moneyRowHtml(tr("today") + tr("tokenSuffix"), today, 2)}
-      `;
-    }
-    function renderCodexPanel(report) {
-      const other = findOther(report, "codex");
+    function renderAgentUsagePanel(report, agent, title, logoClass) {
+      const other = findOther(report, agent);
+      const cny = String(other && other.currency || "").toUpperCase() === "CNY";
       const today = other && other.today ? other.today : null;
       const month = other && other.month ? other.month : null;
       const lifetime = other && other.lifetime ? other.lifetime : null;
       const todayTok = today && Number.isFinite(today.tokens_used) ? fmtTok(today.tokens_used) : "-";
-      const todayCost = today && Number.isFinite(today.cost_usd) ? fmtCost(today.cost_usd) : "-";
+      const todayCost = today && Number.isFinite(today.cost) ? fmtCost(today.cost, cny) : "-";
       const monthTok = month && Number.isFinite(month.tokens_used) ? fmtTok(month.tokens_used) : "-";
-      const monthCost = month && Number.isFinite(month.cost_usd) ? fmtCost(month.cost_usd) : "-";
+      const monthCost = month && Number.isFinite(month.cost) ? fmtCost(month.cost, cny) : "-";
       const lifeTok = lifetime && Number.isFinite(lifetime.tokens_used) ? fmtTok(lifetime.tokens_used) : "-";
-      const lifeCost = lifetime && Number.isFinite(lifetime.cost_usd) ? fmtCost(lifetime.cost_usd) : "-";
+      const lifeCost = lifetime && Number.isFinite(lifetime.cost) ? fmtCost(lifetime.cost, cny) : "-";
       return `
-        <div class="logo codex-logo"></div>
-        <div class="title">CODEX</div>
+        <div class="logo ${logoClass}"></div>
+        <div class="title">${esc(title)}</div>
         ${modelRowsHtml(other && other.by_model)}
         <div class="subrule"></div>
         ${rowHtml(tr("today"), todayTok, todayCost, 0)}
@@ -783,9 +741,19 @@
         ${rowHtml(tr("total"), lifeTok, lifeCost, 2)}
       `;
     }
+    function renderCodexPanel(report) {
+      return renderAgentUsagePanel(report, "codex", "CODEX", "codex-logo");
+    }
+    function renderDshPanel(report) {
+      return renderAgentUsagePanel(report, "dsh", "DEEPSEEK", "deepseek-logo");
+    }
+    function renderZcodePanel(report) {
+      return renderAgentUsagePanel(report, "zcode", "ZCODE", "zcode-logo");
+    }
     function renderPanel(agent, report, left) {
       const html = agent === "claude" ? renderClaudePanel(report)
-        : agent === "deepseek" ? renderDeepseekPanel(report)
+        : agent === "dsh" ? renderDshPanel(report)
+        : agent === "zcode" ? renderZcodePanel(report)
         : renderCodexPanel(report);
       return `<div class="panel" style="left:${left}px">${html}</div>`;
     }
@@ -843,7 +811,7 @@
       els.carouselTrack.addEventListener("transitionend", (ev) => {
         if (ev.propertyName !== "transform" || !carouselMoving) return;
         carouselMoving = false;
-        if (carouselIndex >= 3) {
+        if (carouselIndex >= 4) { // UNIQUE_PANELS: track appends 2 wrap panels
           carouselIndex = 0;
           els.carouselTrack.style.transition = "none";
           els.carouselTrack.style.transform = "translateX(0)";
@@ -888,15 +856,12 @@
       if (n >= 1e3) return (n / 1e3).toFixed(0) + "K";
       return String(Math.round(n));
     }
-    function fmtCost(v) {
+    function fmtCost(v, cny) {
+      const sym = cny ? "¥" : "$";
       const n = Number(v || 0);
-      if (n < 100) return "$" + n.toFixed(2);
-      if (n < 1000) return "$" + n.toFixed(0);
-      return "$" + (n / 1000).toFixed(1) + "k";
-    }
-    function fmtMoney(v, currency = "CNY") {
-      const symbol = currency === "CNY" ? "¥" : currency + " ";
-      return symbol + Number(v || 0).toFixed(2);
+      if (n < 100) return sym + n.toFixed(2);
+      if (n < 1000) return sym + n.toFixed(0);
+      return sym + (n / 1000).toFixed(1) + "k";
     }
     function drawIcon(kind) {
       const stroke = "currentColor";
