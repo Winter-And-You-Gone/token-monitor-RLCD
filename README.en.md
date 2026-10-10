@@ -58,8 +58,9 @@ Two-column display of Claude / DeepSeek / Codex today, month, and lifetime usage
 
 3×3 grid showing intelligence-efficiency benchmark data from [codexradar.com](https://codexradar.com):
 
-- Rows: sol (sun) / terra (earth) / luna (moon) models
+- Rows: astra (rotating galaxy) / sol (sun) / terra (earth) models
 - Columns: ULTRA / MAX / XHIGH effort levels
+- Row 4: DeepSeek + luna max wide cells; the crab pet fills terra's spare xhigh cell
 - Each cell shows IQ, price, time, pass rate (/112), and a trend sparkline
 - Auto-refreshes every 10 minutes; top bar shows countdown to next refresh
 

@@ -1,7 +1,7 @@
 # Python
 __pycache__/
 *.py[cod]
-.venv/
+.venv*/
 .uv-cache/
 *.egg-info/
 
@@ -23,6 +23,9 @@ Thumbs.db
 # Local config
 bridge/.env
 firmware/main/secrets.h
+
+# Board flash dumps (device backups read out with esptool; not source)
+board-backup/
 
 # Local runtime / QA scratch
 .playwright-cli/
@@ -61,6 +64,7 @@ docs/preview/
 # AI agent internal docs (machine-specific paths)
 AGENTS.md
 docs/TOOLCHAIN.md
+.workbuddy-ai/
 
 # Codex hooks (generated from .example by install_codex_hooks.py)
 bridge/codex_hooks.json

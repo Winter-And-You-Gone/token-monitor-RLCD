@@ -11,6 +11,10 @@ GIF_DIR = ROOT / "clawd-on-desk" / "assets" / "gif"
 # GIF_DIR so firmware frames use the latest art without touching the upstream
 # clawd-on-desk source. See AGENTS.md "更新 gif 动画".
 NEWGIF_DIR = ROOT / "bridge" / "assets" / "newgif"
+# Re-rendered GIFs land here (only the ones that changed). Preferred over
+# GIF_DIR so firmware frames use the latest art without touching the upstream
+# clawd-on-desk source. See AGENTS.md "更新 gif 动画".
+NEWGIF_DIR = ROOT / "bridge" / "assets" / "newgif"
 OUT_C = ROOT / "firmware" / "components" / "ui_app" / "pet_anim.c"
 OUT_H = ROOT / "firmware" / "components" / "ui_app" / "pet_anim.h"
 

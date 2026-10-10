@@ -94,6 +94,30 @@ f12 = render_frame(trans, 90.0, ray_inset=2.0)
 seam_diff = sum(1 for a, b in zip(frames_bytes[0], f12) if (a > 0) != (b > 0))
 print(f"seam frame[0] vs frame[12]: {seam_diff} pixels differ")
 
+# seam check: re-render frame at t=1.0 (== frame[12]) and compare to frame[0]
+amt = 2.0 * (0.5 - 0.5 * math.cos(2 * math.pi * 1.0))  # == 0
+trans = []
+for r in rays:
+    cxr, cyr = r["centroid"]
+    dx, dy = cxr - core_cx, cyr - core_cy
+    L = math.hypot(dx, dy) or 1
+    trans.append((round(dx / L * amt), round(dy / L * amt)))
+f12 = render_frame(trans, 90.0)
+seam_diff = sum(1 for a, b in zip(frames_bytes[0], f12) if (a > 0) != (b > 0))
+print(f"seam frame[0] vs frame[12]: {seam_diff} pixels differ")
+
+# seam check: re-render frame at t=1.0 (== frame[12]) and compare to frame[0]
+amt = 2.0 * (0.5 - 0.5 * math.cos(2 * math.pi * 1.0))  # == 0
+trans = []
+for r in rays:
+    cxr, cyr = r["centroid"]
+    dx, dy = cxr - core_cx, cyr - core_cy
+    L = math.hypot(dx, dy) or 1
+    trans.append((round(dx / L * amt), round(dy / L * amt)))
+f12 = render_frame(trans, 90.0)
+seam_diff = sum(1 for a, b in zip(frames_bytes[0], f12) if (a > 0) != (b > 0))
+print(f"seam frame[0] vs frame[12]: {seam_diff} pixels differ")
+
 # --- build C source ---
 def emit_frame(idx, bts):
     arr = ",".join(str(v) for v in bts)

@@ -54,8 +54,9 @@ IN 26.3°C  65%RH         SHENZHEN  Partly
 
 3×3 网格展示 [codexradar.com](https://codexradar.com) 的智力效率基准数据：
 
-- 行：sol（太阳）/ terra（地球）/ luna（月亮）三个模型
+- 行：astra（旋转银河系）/ sol（太阳）/ terra（地球）三个模型
 - 列：ULTRA / MAX / XHIGH 三档努力程度
+- 第 4 行：DeepSeek + luna max 宽格；terra xhigh 空格由小螃蟹填充
 - 每格显示 IQ 值、价格、耗时、通过率（/112）及趋势 sparkline
 - 每 10 分钟自动刷新，顶部显示下次刷新倒计时
 

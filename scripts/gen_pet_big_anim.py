@@ -9,7 +9,7 @@ import gen_pet_anim as base
 ROOT = Path(__file__).resolve().parents[1]
 OUT_C = ROOT / "firmware" / "components" / "ui_app" / "pet_big_anim.c"
 OUT_H = ROOT / "firmware" / "components" / "ui_app" / "pet_big_anim.h"
-TARGET_SIZE = 184
+TARGET_SIZE = 256
 
 STATE_TO_ASSET = {
     **base.STATE_TO_ASSET,

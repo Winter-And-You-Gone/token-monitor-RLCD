@@ -45,6 +45,7 @@ ICONS={}
 ICONS["claudecode"]=svg_alpha(str(ROOT / "docs" / "assets" / "claudecode.svg"),34)
 ICONS["deepseek"]=svg_alpha(str(ROOT / "docs" / "assets" / "deepseek.svg"),34)
 ICONS["codex"]=svg_alpha(str(ROOT / "docs" / "assets" / "codex.svg"),34)
+ICONS["zcode"]=svg_alpha(str(ROOT / "docs" / "assets" / "zcode.svg"),34)
 for k in ("clear","partly","cloud","rain","snow","fog"):
     ICONS["wx_"+k]=weather_alpha(k,26)
 

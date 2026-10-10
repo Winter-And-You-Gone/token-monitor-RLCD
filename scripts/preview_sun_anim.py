@@ -94,6 +94,38 @@ for f in range(COMBO_FRAMES):
         trans.append((dx / L * amt, dy / L * amt))
     combo.append(render_frame(ray_translate=trans, ray_rotate_deg=off))
 
+# --- COMBO: rotate + pulse simultaneously ---
+COMBO_FRAMES = 12
+combo = []
+for f in range(COMBO_FRAMES):
+    t = f / COMBO_FRAMES
+    breath = 0.5 - 0.5 * math.cos(2 * math.pi * t)        # 0..1..0
+    amt = 2.0 * breath                                      # pulse up to 2px
+    off = f * (45.0 / COMBO_FRAMES)                         # rotate 0..45deg
+    trans = []
+    for r in rays:
+        cxr, cyr = r["centroid"]
+        dx, dy = cxr - core_cx, cyr - core_cy
+        L = math.hypot(dx, dy) or 1
+        trans.append((dx / L * amt, dy / L * amt))
+    combo.append(render_frame(ray_translate=trans, ray_rotate_deg=off))
+
+# --- COMBO: rotate + pulse simultaneously ---
+COMBO_FRAMES = 12
+combo = []
+for f in range(COMBO_FRAMES):
+    t = f / COMBO_FRAMES
+    breath = 0.5 - 0.5 * math.cos(2 * math.pi * t)        # 0..1..0
+    amt = 2.0 * breath                                      # pulse up to 2px
+    off = f * (45.0 / COMBO_FRAMES)                         # rotate 0..45deg
+    trans = []
+    for r in rays:
+        cxr, cyr = r["centroid"]
+        dx, dy = cxr - core_cx, cyr - core_cy
+        L = math.hypot(dx, dy) or 1
+        trans.append((dx / L * amt, dy / L * amt))
+    combo.append(render_frame(ray_translate=trans, ray_rotate_deg=off))
+
 
 def contact(frames, name):
     n = len(frames)
